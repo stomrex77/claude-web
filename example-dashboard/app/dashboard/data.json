@@ -1,0 +1,72 @@
+[
+  {
+    "id": 1,
+    "title": "Fix authentication bug in login flow",
+    "directory": "~/projects/webapp",
+    "branch": "main",
+    "messages": 24
+  },
+  {
+    "id": 2,
+    "title": "Implement dark mode toggle",
+    "directory": "~/projects/webapp",
+    "branch": "feature/dark-mode",
+    "messages": 18
+  },
+  {
+    "id": 3,
+    "title": "Refactor API endpoints for v2",
+    "directory": "~/projects/api-server",
+    "branch": "main",
+    "messages": 45
+  },
+  {
+    "id": 4,
+    "title": "Add unit tests for user service",
+    "directory": "~/projects/api-server",
+    "branch": "test/user-service",
+    "messages": 32
+  },
+  {
+    "id": 5,
+    "title": "Setup CI/CD pipeline with GitHub Actions",
+    "directory": "~/projects/webapp",
+    "branch": "main",
+    "messages": 56
+  },
+  {
+    "id": 6,
+    "title": "Debug memory leak in worker process",
+    "directory": "~/projects/backend",
+    "branch": "fix/memory-leak",
+    "messages": 28
+  },
+  {
+    "id": 7,
+    "title": "Create dashboard components",
+    "directory": "~/projects/admin-panel",
+    "branch": "feature/dashboard",
+    "messages": 67
+  },
+  {
+    "id": 8,
+    "title": "Optimize database queries",
+    "directory": "~/projects/api-server",
+    "branch": "perf/db-queries",
+    "messages": 15
+  },
+  {
+    "id": 9,
+    "title": "Add file upload functionality",
+    "directory": "~/projects/webapp",
+    "branch": "feature/file-upload",
+    "messages": 41
+  },
+  {
+    "id": 10,
+    "title": "Fix responsive layout issues",
+    "directory": "~/projects/landing-page",
+    "branch": "main",
+    "messages": 12
+  }
+]
