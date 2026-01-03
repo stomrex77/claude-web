@@ -3,6 +3,7 @@
 import { type FormEventHandler, useState } from "react"
 import { type Icon } from "@tabler/icons-react"
 import { FolderOpen, Image, MoreHorizontal } from "lucide-react"
+import { useDirectory } from "@/contexts/directory-context"
 
 import {
   PromptInput,
@@ -45,6 +46,7 @@ export function NavMain({
   const [status, setStatus] = useState<
     'submitted' | 'streaming' | 'ready' | 'error'
   >('ready')
+  const { rootDirectory, isHydrated } = useDirectory()
 
   const handleSubmit: FormEventHandler<HTMLFormElement> = (event) => {
     event.preventDefault()
@@ -98,18 +100,26 @@ export function NavMain({
             </PromptInput>
           </SidebarMenuItem>
           <SidebarMenuItem>
-            <SidebarMenuButton className="gap-2">
-              <FolderOpen size={16} />
-              <span className="truncate text-muted-foreground">~/Documents/claude-web</span>
+            <SidebarMenuButton className="gap-2" asChild>
+              <a href="/directory">
+                <FolderOpen size={16} />
+                {isHydrated ? (
+                  <span className="truncate text-muted-foreground">{rootDirectory}</span>
+                ) : (
+                  <span className="h-4 w-32 bg-muted/50 rounded animate-pulse" />
+                )}
+              </a>
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>
         <SidebarMenu>
           {items.map((item) => (
             <SidebarMenuItem key={item.title}>
-              <SidebarMenuButton tooltip={item.title} className="overflow-visible">
-                {item.icon && <item.icon className="size-4 shrink-0" />}
-                <span>{item.title}</span>
+              <SidebarMenuButton tooltip={item.title} className="overflow-visible" asChild>
+                <a href={item.url}>
+                  {item.icon && <item.icon className="size-4 shrink-0" />}
+                  <span>{item.title}</span>
+                </a>
               </SidebarMenuButton>
             </SidebarMenuItem>
           ))}
