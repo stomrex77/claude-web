@@ -1,12 +1,11 @@
-import { AppSidebar } from "@/components/app-sidebar"
-import { DirectoryToolbar } from "@/components/directory-toolbar"
-import { DirectoryTree } from "@/components/directory-tree"
-import {
-  SidebarInset,
-  SidebarProvider,
-} from "@/components/ui/sidebar"
+"use client"
 
-export default function DirectoryPage() {
+import { AppSidebar } from "@/components/app-sidebar"
+import { SiteHeader } from "@/components/site-header"
+import { TerminalView } from "@/components/terminal-view"
+import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar"
+
+export default function TerminalPage() {
   return (
     <SidebarProvider
       style={
@@ -18,9 +17,9 @@ export default function DirectoryPage() {
     >
       <AppSidebar variant="inset" />
       <SidebarInset>
-        <DirectoryToolbar />
-        <div className="flex flex-1 flex-col bg-background">
-          <DirectoryTree />
+        <SiteHeader title="Terminal" />
+        <div className="flex flex-1 flex-col">
+          <TerminalView className="flex-1" />
         </div>
       </SidebarInset>
     </SidebarProvider>

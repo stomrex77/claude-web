@@ -3,11 +3,12 @@
 import * as React from "react"
 
 const STORAGE_KEY = "claude-web-root-directory"
-const DEFAULT_DIRECTORY = "~/Documents/claude-web"
+const DEFAULT_DIRECTORY = "~"
 
 interface DirectoryContextType {
   rootDirectory: string
   setRootDirectory: (path: string) => void
+  resetToDefault: () => void
   isHydrated: boolean
 }
 
@@ -28,6 +29,12 @@ export function DirectoryProvider({ children }: { children: React.ReactNode }) {
     setIsHydrated(true)
   }, [])
 
+  // Reset to default directory
+  const resetToDefault = React.useCallback(() => {
+    setRootDirectoryState(DEFAULT_DIRECTORY)
+    localStorage.setItem(STORAGE_KEY, DEFAULT_DIRECTORY)
+  }, [])
+
   // Wrapper that also persists to localStorage
   const setRootDirectory = React.useCallback((path: string) => {
     setRootDirectoryState(path)
@@ -37,8 +44,9 @@ export function DirectoryProvider({ children }: { children: React.ReactNode }) {
   const value = React.useMemo(() => ({
     rootDirectory,
     setRootDirectory,
+    resetToDefault,
     isHydrated,
-  }), [rootDirectory, setRootDirectory, isHydrated])
+  }), [rootDirectory, setRootDirectory, resetToDefault, isHydrated])
 
   return (
     <DirectoryContext.Provider value={value}>

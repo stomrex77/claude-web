@@ -19,6 +19,7 @@ import {
   IconUsers,
 } from "@tabler/icons-react"
 
+import { BackendStatus } from "@/components/backend-status"
 import { NavDocuments } from "@/components/nav-documents"
 import { NavMain } from "@/components/nav-main"
 import { NavSecondary } from "@/components/nav-secondary"
@@ -49,6 +50,11 @@ const data = {
       title: "Directory",
       url: "/directory",
       icon: IconFolder,
+    },
+    {
+      title: "Terminal",
+      url: "/terminal",
+      icon: IconTerminal2,
     },
     {
       title: "Lifecycle",
@@ -179,6 +185,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         <NavSecondary items={data.navSecondary} className="mt-auto" />
       </SidebarContent>
       <SidebarFooter>
+        <BackendStatus />
         <NavUser user={data.user} />
       </SidebarFooter>
     </Sidebar>

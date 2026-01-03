@@ -4,7 +4,7 @@ import * as React from "react"
 import { IconChevronRight } from "@tabler/icons-react"
 import { cn } from "@/lib/utils"
 import { getFileIcon, getFolderIcon } from "@/lib/file-icons"
-import type { TreeNode } from "@/app/directory/mock-data"
+import type { TreeNode } from "@/lib/api"
 
 interface TreeItemProps {
   node: TreeNode

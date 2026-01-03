@@ -4,7 +4,11 @@ import { useEffect, useState } from "react"
 import { IconMoon, IconSun } from "@tabler/icons-react"
 import { Button } from "@/components/ui/button"
 
-export function SiteHeader() {
+interface SiteHeaderProps {
+  title?: string
+}
+
+export function SiteHeader({ title = "Dashboard" }: SiteHeaderProps) {
   const [isDark, setIsDark] = useState(true)
 
   useEffect(() => {
@@ -25,7 +29,7 @@ export function SiteHeader() {
   return (
     <header className="flex h-(--header-height) shrink-0 items-center gap-2 transition-[width,height] ease-linear">
       <div className="flex w-full items-center gap-1 px-4 lg:gap-2 lg:px-6">
-        <h1 className="text-xl font-semibold">Dashboard</h1>
+        <h1 className="text-xl font-semibold">{title}</h1>
         <div className="ml-auto flex items-center gap-2">
           <Button
             variant="ghost"
