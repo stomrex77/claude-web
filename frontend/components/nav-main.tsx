@@ -1,9 +1,10 @@
 "use client"
 
-import { type FormEventHandler, useState } from "react"
+import { type FormEventHandler, useState, useEffect } from "react"
 import { type Icon } from "@tabler/icons-react"
 import { FolderOpen, Image, MoreHorizontal } from "lucide-react"
 import { useDirectory } from "@/contexts/directory-context"
+import { useAgent } from "@/contexts/agent-context"
 
 import {
   PromptInput,
@@ -27,9 +28,9 @@ import {
 } from "@/components/ui/sidebar"
 
 const models = [
-  { id: 'gpt-4o', name: 'GPT-4o' },
-  { id: 'claude-3-5-sonnet', name: 'Claude 3.5 Sonnet' },
-  { id: 'gemini-1.5-pro', name: 'Gemini 1.5 Pro' },
+  { id: 'claude-sonnet-4-5', name: 'Claude Sonnet 4.5' },
+  { id: 'claude-opus-4', name: 'Claude Opus 4' },
+  { id: 'claude-haiku', name: 'Claude Haiku' },
 ]
 
 export function NavMain({
@@ -43,24 +44,20 @@ export function NavMain({
 }) {
   const [text, setText] = useState<string>('')
   const [model, setModel] = useState<string>(models[0].id)
-  const [status, setStatus] = useState<
-    'submitted' | 'streaming' | 'ready' | 'error'
-  >('ready')
   const { rootDirectory, isHydrated } = useDirectory()
+  const { sendMessage, isStreaming, lastError } = useAgent()
 
-  const handleSubmit: FormEventHandler<HTMLFormElement> = (event) => {
+  // Derive status from agent state
+  const status = isStreaming ? 'streaming' : lastError ? 'error' : 'ready'
+
+  const handleSubmit: FormEventHandler<HTMLFormElement> = async (event) => {
     event.preventDefault()
-    if (!text) {
+    if (!text || isStreaming) {
       return
     }
-    setStatus('submitted')
-    setTimeout(() => {
-      setStatus('streaming')
-    }, 200)
-    setTimeout(() => {
-      setStatus('ready')
-      setText('')
-    }, 2000)
+    const message = text
+    setText('')
+    await sendMessage(message, rootDirectory)
   }
 
   return (
@@ -104,7 +101,7 @@ export function NavMain({
               <a href="/directory">
                 <FolderOpen size={16} />
                 {isHydrated ? (
-                  <span className="truncate text-muted-foreground">{rootDirectory}</span>
+                  <span className="truncate text-muted-foreground [direction:rtl] text-left">{rootDirectory}</span>
                 ) : (
                   <span className="h-4 w-32 bg-muted/50 rounded animate-pulse" />
                 )}

@@ -1,3 +1,5 @@
+"use client"
+
 import { AppSidebar } from "@/components/app-sidebar"
 import { ChartAreaInteractive } from "@/components/chart-area-interactive"
 import { DataTable } from "@/components/data-table"
@@ -6,10 +8,21 @@ import {
   SidebarInset,
   SidebarProvider,
 } from "@/components/ui/sidebar"
-
-import data from "./data.json"
+import { useAgent } from "@/contexts/agent-context"
 
 export default function Page() {
+  const { sessions, pagination, nextPage, prevPage } = useAgent()
+
+  // Transform sessions to match data table format
+  const tableData = sessions.map((session) => ({
+    id: session.id,
+    title: session.title,
+    directory: session.directory,
+    messages: session.messageCount,
+    inputTokens: session.totalTokens?.input,
+    outputTokens: session.totalTokens?.output,
+  }))
+
   return (
     <SidebarProvider
       style={
@@ -28,7 +41,12 @@ export default function Page() {
               <div className="px-4 lg:px-6">
                 <ChartAreaInteractive />
               </div>
-              <DataTable data={data} />
+              <DataTable
+                data={tableData}
+                pagination={pagination}
+                onNextPage={nextPage}
+                onPrevPage={prevPage}
+              />
             </div>
           </div>
         </div>

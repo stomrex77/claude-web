@@ -1,5 +1,6 @@
 import { AppSidebar } from "@/components/app-sidebar"
 import { DirectoryToolbar } from "@/components/directory-toolbar"
+import { DirectoryPathInput } from "@/components/directory-path-input"
 import { DirectoryTree } from "@/components/directory-tree"
 import {
   SidebarInset,
@@ -19,6 +20,7 @@ export default function DirectoryPage() {
       <AppSidebar variant="inset" />
       <SidebarInset>
         <DirectoryToolbar />
+        <DirectoryPathInput />
         <div className="flex flex-1 flex-col bg-background">
           <DirectoryTree />
         </div>

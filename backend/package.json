@@ -11,7 +11,7 @@
     "postinstall": "node -e \"const fs=require('fs'),p=require('path'),d='node_modules/node-pty/prebuilds/darwin-'+process.arch;if(fs.existsSync(d)){const h=p.join(d,'spawn-helper');if(fs.existsSync(h))fs.chmodSync(h,0o755);}\""
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.39.0",
+    "@anthropic-ai/claude-agent-sdk": "^0.1.76",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.21.2",

@@ -1,82 +1,109 @@
 "use client"
 
-const usageData = [
-  {
-    label: "Current Session",
-    used: 13,
-    limit: 100,
-    resetTime: "Resets in 1 hr 43 min",
-  },
-  {
-    label: "All Models",
-    used: 2,
-    limit: 100,
-    resetTime: "Resets Fri 10:00 PM",
-  },
-  {
-    label: "Sonnet Only",
-    used: 0,
-    limit: 100,
-    resetTime: "You haven't used Sonnet yet",
-  },
-]
+import { useEffect, useState } from "react"
+import { getRateLimits, type RateLimitData, type UsageLimit } from "@/lib/api"
 
-function UsageBar({
-  label,
-  used,
-  limit,
-  resetTime,
-}: {
-  label: string
-  used: number
-  limit: number
-  resetTime: string
-}) {
-  const percentage = Math.min((used / limit) * 100, 100)
-  const isHigh = percentage > 80
-  const isMedium = percentage > 50 && percentage <= 80
+function UsageBar({ limit, loading }: { limit: UsageLimit | null; loading: boolean }) {
+  if (loading) {
+    return (
+      <div className="space-y-2">
+        <div className="h-4 w-full bg-muted rounded animate-pulse" />
+        <div className="h-3 w-24 bg-muted rounded animate-pulse" />
+      </div>
+    )
+  }
+
+  if (!limit) {
+    return (
+      <div className="text-sm text-muted-foreground">
+        No data available
+      </div>
+    )
+  }
+
+  const percent = limit.percentUsed
+  const barWidth = Math.min(percent, 100)
+
+  // Color based on usage level
+  const getBarColor = (percent: number) => {
+    if (percent >= 80) return "bg-red-500"
+    if (percent >= 60) return "bg-yellow-500"
+    return "bg-purple-400"
+  }
 
   return (
     <div className="space-y-2">
-      <div className="flex items-center justify-between">
-        <p className="text-sm font-medium">{label}</p>
-        <p className="text-sm font-medium tabular-nums">
-          {percentage.toFixed(0)}% used
-        </p>
+      <div className="flex items-center justify-between text-sm">
+        <span className="font-medium">{limit.name}</span>
+        <span className="tabular-nums text-muted-foreground">{percent}% used</span>
       </div>
-      <div className="h-2 w-full overflow-hidden rounded-full bg-secondary">
+      <div className="h-3 w-full bg-muted/50 rounded-full overflow-hidden">
         <div
-          className={`h-full rounded-full transition-all ${
-            isHigh
-              ? "bg-destructive"
-              : isMedium
-                ? "bg-chart-4"
-                : "bg-primary"
-          }`}
-          style={{ width: `${Math.max(percentage, 1)}%` }}
+          className={`h-full ${getBarColor(percent)} transition-all duration-500`}
+          style={{ width: `${barWidth}%` }}
         />
       </div>
-      <p className="text-xs text-muted-foreground">
-        {resetTime}
-      </p>
+      {limit.resetTime && (
+        <p className="text-xs text-muted-foreground">
+          Resets {limit.resetTime}
+          {limit.resetTimezone && ` (${limit.resetTimezone})`}
+        </p>
+      )}
     </div>
   )
 }
 
 export function ChartAreaInteractive() {
+  const [rateLimits, setRateLimits] = useState<RateLimitData | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    const fetchLimits = async () => {
+      setLoading(true)
+      setError(null)
+      try {
+        const data = await getRateLimits()
+        setRateLimits(data)
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Failed to load usage")
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchLimits()
+    // Refresh every 60 seconds
+    const interval = setInterval(fetchLimits, 60000)
+    return () => clearInterval(interval)
+  }, [])
+
   return (
-    <div>
-      <div className="mb-4">
-        <h2 className="text-lg font-semibold">Plan Usage Limits</h2>
+    <div className="space-y-6">
+      <div>
+        <h2 className="text-lg font-semibold">Usage Limits</h2>
         <p className="text-sm text-muted-foreground">
-          Current usage across different models and limits
+          Your Claude Code subscription usage
         </p>
       </div>
+
+      {error && (
+        <div className="p-3 bg-destructive/10 text-destructive text-sm rounded-lg">
+          {error}
+        </div>
+      )}
+
       <div className="space-y-6">
-        {usageData.map((item) => (
-          <UsageBar key={item.label} {...item} />
-        ))}
+        <UsageBar limit={rateLimits?.currentSession ?? null} loading={loading} />
+        <UsageBar limit={rateLimits?.currentWeekAllModels ?? null} loading={loading} />
+        <UsageBar limit={rateLimits?.currentWeekSonnetOnly ?? null} loading={loading} />
       </div>
+
+      {rateLimits?.timestamp && (
+        <p className="text-xs text-muted-foreground text-right">
+          Last updated: {new Date(rateLimits.timestamp).toLocaleTimeString()}
+        </p>
+      )}
     </div>
   )
 }

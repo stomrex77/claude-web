@@ -69,9 +69,12 @@ export interface AgentTaskResponse {
 }
 
 export interface AgentStreamEvent {
-  type: "token" | "tool_use" | "tool_result" | "complete" | "error";
+  type: "connected" | "token" | "tool_use" | "tool_result" | "complete" | "error";
   data: unknown;
 }
+
+// Re-export SessionMetadata from session-store
+export type { SessionMetadata } from "../services/session-store.js";
 
 // Conversation session
 export interface ConversationMessage {

@@ -3,6 +3,7 @@
 import * as React from "react"
 import { toast } from "sonner"
 import { TreeItem } from "@/components/tree-item"
+import { ParentDirectoryItem } from "@/components/parent-directory-item"
 import { useDirectory } from "@/contexts/directory-context"
 import { fetchDirectoryTree, validateDirectory, type TreeNode } from "@/lib/api"
 import { IconLoader2 } from "@tabler/icons-react"
@@ -14,7 +15,13 @@ export function DirectoryTree() {
   const [error, setError] = React.useState<string | null>(null)
   const [expandedIds, setExpandedIds] = React.useState<Set<string>>(new Set())
   const [selectedId, setSelectedId] = React.useState<string | null>(null)
-  const { rootDirectory, setRootDirectory, resetToDefault } = useDirectory()
+  const {
+    rootDirectory,
+    setRootDirectory,
+    resetToDefault,
+    navigateUp,
+    canNavigateUp,
+  } = useDirectory()
 
   // Fetch directory tree when rootDirectory changes
   React.useEffect(() => {
@@ -124,6 +131,9 @@ export function DirectoryTree() {
 
   return (
     <div className="flex-1 overflow-y-auto py-2">
+      {/* Parent directory navigation */}
+      {canNavigateUp && <ParentDirectoryItem onNavigateUp={navigateUp} />}
+
       {data.map((node) => (
         <TreeItem
           key={node.id}

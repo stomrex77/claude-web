@@ -9,6 +9,8 @@ interface DirectoryContextType {
   rootDirectory: string
   setRootDirectory: (path: string) => void
   resetToDefault: () => void
+  navigateUp: () => void
+  canNavigateUp: boolean
   isHydrated: boolean
 }
 
@@ -41,12 +43,33 @@ export function DirectoryProvider({ children }: { children: React.ReactNode }) {
     localStorage.setItem(STORAGE_KEY, path)
   }, [])
 
+  // Navigate to parent directory
+  const navigateUp = React.useCallback(() => {
+    if (rootDirectory === DEFAULT_DIRECTORY) return
+
+    // Split path: "~/Documents/Projects" → ["~", "Documents", "Projects"]
+    const segments = rootDirectory.split("/")
+
+    // Remove last segment
+    segments.pop()
+
+    // Rejoin: ["~", "Documents"] → "~/Documents"
+    const parentPath = segments.join("/") || DEFAULT_DIRECTORY
+
+    setRootDirectory(parentPath)
+  }, [rootDirectory, setRootDirectory])
+
+  // Check if we can navigate up (not at root)
+  const canNavigateUp = rootDirectory !== DEFAULT_DIRECTORY
+
   const value = React.useMemo(() => ({
     rootDirectory,
     setRootDirectory,
     resetToDefault,
+    navigateUp,
+    canNavigateUp,
     isHydrated,
-  }), [rootDirectory, setRootDirectory, resetToDefault, isHydrated])
+  }), [rootDirectory, setRootDirectory, resetToDefault, navigateUp, canNavigateUp, isHydrated])
 
   return (
     <DirectoryContext.Provider value={value}>

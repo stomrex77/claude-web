@@ -1,213 +1,76 @@
-import Anthropic from "@anthropic-ai/sdk";
-import { v4 as uuidv4 } from "uuid";
+import { query, type Options, type SDKMessage, type SDKResultMessage } from "@anthropic-ai/claude-agent-sdk";
+import { sessionStore, type SessionMetadata } from "./session-store.js";
+import type { AgentStreamEvent, AgentTaskResponse, AgentToolCall } from "../types/index.js";
 import { config } from "../config/index.js";
-import { handleTextEditorTool } from "../tools/text-editor.js";
-import { handleBashTool } from "../tools/bash.js";
-import type {
-  ConversationSession,
-  AgentTaskResponse,
-  AgentToolCall,
-  AgentStreamEvent,
-} from "../types/index.js";
-
-// Tool definitions for Claude
-const TOOLS: Anthropic.Tool[] = [
-  {
-    name: "str_replace_based_edit_tool",
-    description: `A tool for viewing, creating, and editing files.
-
-Commands:
-- view: View file contents or list directory. Use view_range for specific lines.
-- create: Create a new file with the given content.
-- str_replace: Replace a unique string in a file. old_str must appear exactly once.
-- insert: Insert text at a specific line number.`,
-    input_schema: {
-      type: "object" as const,
-      properties: {
-        command: {
-          type: "string",
-          enum: ["view", "create", "str_replace", "insert"],
-          description: "The command to execute",
-        },
-        path: {
-          type: "string",
-          description: "Absolute path to the file or directory",
-        },
-        file_text: {
-          type: "string",
-          description: "Content for create command",
-        },
-        old_str: {
-          type: "string",
-          description: "Text to find for str_replace (must be unique)",
-        },
-        new_str: {
-          type: "string",
-          description: "Replacement text for str_replace or insert",
-        },
-        insert_line: {
-          type: "number",
-          description: "Line number for insert command (1-indexed)",
-        },
-        view_range: {
-          type: "array",
-          items: { type: "number" },
-          description: "Optional [start, end] line range for view",
-        },
-      },
-      required: ["command", "path"],
-    },
-  },
-  {
-    name: "bash",
-    description: `Execute shell commands. Use this for running scripts, installing packages, git operations, etc.
-
-The command runs in a bash shell with the working directory set to the project root.`,
-    input_schema: {
-      type: "object" as const,
-      properties: {
-        command: {
-          type: "string",
-          description: "The shell command to execute",
-        },
-        restart: {
-          type: "boolean",
-          description: "Set to true to restart the bash session",
-        },
-      },
-      required: ["command"],
-    },
-  },
-];
 
 class ClaudeAgentService {
-  private client: Anthropic;
-  private sessions: Map<string, ConversationSession> = new Map();
-
-  constructor() {
-    this.client = new Anthropic({
-      apiKey: config.anthropicApiKey,
-    });
-  }
-
-  private getOrCreateSession(
-    sessionId: string | undefined,
-    workingDirectory: string
-  ): ConversationSession {
-    if (sessionId && this.sessions.has(sessionId)) {
-      const session = this.sessions.get(sessionId)!;
-      session.lastActivity = new Date();
-      return session;
-    }
-
-    const newSession: ConversationSession = {
-      id: sessionId || uuidv4(),
-      messages: [],
-      workingDirectory,
-      createdAt: new Date(),
-      lastActivity: new Date(),
-    };
-
-    this.sessions.set(newSession.id, newSession);
-    return newSession;
-  }
-
   async executeTask(
     task: string,
     sessionId?: string,
     workingDirectory: string = config.defaultWorkingDirectory
   ): Promise<AgentTaskResponse> {
-    const session = this.getOrCreateSession(sessionId, workingDirectory);
     const toolCalls: AgentToolCall[] = [];
+    let responseText = "";
+    let newSessionId = sessionId || "";
+    let stopReason = "end_turn";
 
-    // Add user message
-    session.messages.push({
-      role: "user",
-      content: task,
-    });
+    const options: Options = {
+      cwd: workingDirectory,
+      allowedTools: ["Read", "Write", "Edit", "Bash", "Glob", "Grep"],
+      permissionMode: "acceptEdits",
+      ...(sessionId && { resume: sessionId }),
+    };
 
-    // Build messages for API
-    const messages: Anthropic.MessageParam[] = session.messages.map((m) => ({
-      role: m.role,
-      content: m.content as string,
-    }));
+    try {
+      for await (const message of query({ prompt: task, options })) {
+        // Capture session ID from init message
+        if (message.type === "system" && message.subtype === "init") {
+          newSessionId = message.session_id;
+          // Store session metadata
+          sessionStore.upsert(newSessionId, task, workingDirectory);
+        }
 
-    let response = await this.client.messages.create({
-      model: "claude-sonnet-4-5-20250514",
-      max_tokens: 8192,
-      system: this.getSystemPrompt(session.workingDirectory),
-      tools: TOOLS,
-      messages,
-    });
+        // Capture tool usage from assistant messages
+        if (message.type === "assistant" && message.message.content) {
+          for (const block of message.message.content) {
+            if (block.type === "tool_use") {
+              toolCalls.push({
+                id: block.id,
+                name: block.name,
+                input: block.input as Record<string, unknown>,
+              });
+            } else if (block.type === "text") {
+              responseText += block.text;
+            }
+          }
+        }
 
-    // Tool use loop
-    while (response.stop_reason === "tool_use") {
-      const toolUseBlocks = response.content.filter(
-        (block): block is Anthropic.ToolUseBlock => block.type === "tool_use"
-      );
-
-      // Execute tools
-      const toolResults: Anthropic.ToolResultBlockParam[] = [];
-
-      for (const toolUse of toolUseBlocks) {
-        const result = await this.executeTool(
-          toolUse.name,
-          toolUse.input as Record<string, unknown>,
-          session.workingDirectory
-        );
-
-        toolCalls.push({
-          id: toolUse.id,
-          name: toolUse.name,
-          input: toolUse.input as Record<string, unknown>,
-          result,
-        });
-
-        toolResults.push({
-          type: "tool_result",
-          tool_use_id: toolUse.id,
-          content: result,
-        });
+        // Capture final result
+        if (message.type === "result") {
+          if (message.subtype === "success") {
+            responseText = message.result;
+            stopReason = "end_turn";
+            // Update usage with cost
+            sessionStore.updateUsage(newSessionId, {
+              input: message.usage.input_tokens,
+              output: message.usage.output_tokens,
+              costUsd: message.total_cost_usd,
+            });
+          } else {
+            stopReason = message.subtype;
+          }
+        }
       }
-
-      // Add assistant response and tool results to messages
-      messages.push({
-        role: "assistant",
-        content: response.content,
-      });
-
-      messages.push({
-        role: "user",
-        content: toolResults,
-      });
-
-      // Continue conversation
-      response = await this.client.messages.create({
-        model: "claude-sonnet-4-5-20250514",
-        max_tokens: 8192,
-        system: this.getSystemPrompt(session.workingDirectory),
-        tools: TOOLS,
-        messages,
-      });
+    } catch (error) {
+      console.error("Error executing task:", error);
+      throw error;
     }
 
-    // Extract final text response
-    const textBlocks = response.content.filter(
-      (block): block is Anthropic.TextBlock => block.type === "text"
-    );
-    const finalResponse = textBlocks.map((b) => b.text).join("\n");
-
-    // Update session with final assistant message
-    session.messages.push({
-      role: "assistant",
-      content: finalResponse,
-    });
-
     return {
-      sessionId: session.id,
-      response: finalResponse,
+      sessionId: newSessionId,
+      response: responseText,
       toolCalls,
-      stopReason: response.stop_reason || "end_turn",
+      stopReason,
     };
   }
 
@@ -216,187 +79,176 @@ class ClaudeAgentService {
     sessionId?: string,
     workingDirectory: string = config.defaultWorkingDirectory
   ): AsyncGenerator<AgentStreamEvent> {
-    const session = this.getOrCreateSession(sessionId, workingDirectory);
+    const options: Options = {
+      cwd: workingDirectory,
+      allowedTools: ["Read", "Write", "Edit", "Bash", "Glob", "Grep"],
+      permissionMode: "acceptEdits",
+      includePartialMessages: true,
+      ...(sessionId && { resume: sessionId }),
+    };
 
-    // Add user message
-    session.messages.push({
-      role: "user",
-      content: task,
-    });
+    let currentSessionId = sessionId || "";
 
-    // Build messages for API
-    const messages: Anthropic.MessageParam[] = session.messages.map((m) => ({
-      role: m.role,
-      content: m.content as string,
-    }));
+    try {
+      for await (const message of query({ prompt: task, options })) {
+        const event = this.transformMessage(message, currentSessionId);
 
-    yield { type: "token", data: { sessionId: session.id } };
+        if (event) {
+          // Update session ID if we got it from init
+          if (message.type === "system" && message.subtype === "init") {
+            currentSessionId = message.session_id;
+            // Store session metadata
+            sessionStore.upsert(currentSessionId, task, workingDirectory);
 
-    let continueLoop = true;
-
-    while (continueLoop) {
-      const stream = this.client.messages.stream({
-        model: "claude-sonnet-4-5-20250514",
-        max_tokens: 8192,
-        system: this.getSystemPrompt(session.workingDirectory),
-        tools: TOOLS,
-        messages,
-      });
-
-      let currentToolUses: Anthropic.ToolUseBlock[] = [];
-      let textContent = "";
-
-      for await (const event of stream) {
-        if (event.type === "content_block_delta") {
-          const delta = event.delta;
-          if ("text" in delta) {
-            textContent += delta.text;
-            yield { type: "token", data: { text: delta.text } };
+            yield {
+              type: "connected",
+              data: { sessionId: currentSessionId },
+            };
           }
+
+          yield event;
         }
       }
+    } catch (error) {
+      console.error("Error in stream task:", error);
+      yield {
+        type: "error",
+        data: { message: error instanceof Error ? error.message : "Unknown error" },
+      };
+    }
+  }
 
-      const finalMessage = await stream.finalMessage();
+  private transformMessage(message: SDKMessage, sessionId: string): AgentStreamEvent | null {
+    switch (message.type) {
+      case "stream_event": {
+        // Handle streaming token events
+        const event = message.event;
+        if (event.type === "content_block_delta" && "delta" in event) {
+          const delta = event.delta;
+          if ("text" in delta) {
+            return {
+              type: "token",
+              data: { text: delta.text, sessionId },
+            };
+          }
+        }
+        return null;
+      }
 
-      // Check for tool use
-      const toolUseBlocks = finalMessage.content.filter(
-        (block): block is Anthropic.ToolUseBlock => block.type === "tool_use"
-      );
+      case "assistant": {
+        // Handle complete assistant messages
+        const toolUses: AgentStreamEvent[] = [];
 
-      if (toolUseBlocks.length > 0) {
-        // Execute tools
-        const toolResults: Anthropic.ToolResultBlockParam[] = [];
+        for (const block of message.message.content) {
+          if (block.type === "tool_use") {
+            return {
+              type: "tool_use",
+              data: {
+                id: block.id,
+                name: block.name,
+                input: block.input,
+              },
+            };
+          }
+        }
+        return null;
+      }
 
-        for (const toolUse of toolUseBlocks) {
-          yield {
-            type: "tool_use",
-            data: {
-              id: toolUse.id,
-              name: toolUse.name,
-              input: toolUse.input,
-            },
-          };
-
-          const result = await this.executeTool(
-            toolUse.name,
-            toolUse.input as Record<string, unknown>,
-            session.workingDirectory
-          );
-
-          yield {
+      case "user": {
+        // Handle tool results (user messages with tool results)
+        if (message.tool_use_result !== undefined) {
+          return {
             type: "tool_result",
             data: {
-              id: toolUse.id,
-              result,
+              result: typeof message.tool_use_result === "string"
+                ? message.tool_use_result
+                : JSON.stringify(message.tool_use_result),
             },
           };
+        }
+        return null;
+      }
 
-          toolResults.push({
-            type: "tool_result",
-            tool_use_id: toolUse.id,
-            content: result,
+      case "result": {
+        // Handle completion
+        const resultMessage = message as SDKResultMessage;
+
+        // Update usage in session store
+        if (resultMessage.subtype === "success") {
+          sessionStore.updateUsage(sessionId, {
+            input: resultMessage.usage.input_tokens,
+            output: resultMessage.usage.output_tokens,
+            costUsd: resultMessage.total_cost_usd,
           });
         }
 
-        // Add to messages and continue
-        messages.push({
-          role: "assistant",
-          content: finalMessage.content,
-        });
-
-        messages.push({
-          role: "user",
-          content: toolResults,
-        });
-      } else {
-        // No more tool use, we're done
-        continueLoop = false;
-
-        // Update session
-        const textBlocks = finalMessage.content.filter(
-          (block): block is Anthropic.TextBlock => block.type === "text"
-        );
-        const finalText = textBlocks.map((b) => b.text).join("\n");
-
-        session.messages.push({
-          role: "assistant",
-          content: finalText,
-        });
-
-        yield {
+        return {
           type: "complete",
           data: {
-            sessionId: session.id,
-            stopReason: finalMessage.stop_reason,
+            sessionId,
+            stopReason: resultMessage.subtype,
+            usage: {
+              inputTokens: resultMessage.usage.input_tokens,
+              outputTokens: resultMessage.usage.output_tokens,
+              costUsd: resultMessage.subtype === "success" ? resultMessage.total_cost_usd : 0,
+            },
+            result: resultMessage.subtype === "success" ? resultMessage.result : undefined,
           },
         };
       }
+
+      default:
+        return null;
     }
   }
 
-  private async executeTool(
-    name: string,
-    input: Record<string, unknown>,
-    workingDirectory: string
-  ): Promise<string> {
-    try {
-      switch (name) {
-        case "str_replace_based_edit_tool":
-          return await handleTextEditorTool(input as unknown as Parameters<typeof handleTextEditorTool>[0]);
+  // Get session metadata
+  getSession(sessionId: string): SessionMetadata | undefined {
+    return sessionStore.get(sessionId);
+  }
 
-        case "bash":
-          return await handleBashTool(
-            input as unknown as Parameters<typeof handleBashTool>[0],
-            workingDirectory
-          );
+  // List all sessions (including Claude Code sessions)
+  listSessions(): SessionMetadata[] {
+    // Get Claude Code sessions from local storage
+    const claudeCodeSessions = sessionStore.listClaudeCodeSessions();
 
-        default:
-          return `Unknown tool: ${name}`;
-      }
-    } catch (error) {
-      return `Error executing ${name}: ${error instanceof Error ? error.message : "Unknown error"}`;
+    // Get our web app sessions
+    const webAppSessions = sessionStore.listAll();
+
+    // Merge and deduplicate by ID, Claude Code sessions take precedence
+    const sessionMap = new Map<string, SessionMetadata>();
+
+    // Add web app sessions first
+    for (const session of webAppSessions) {
+      sessionMap.set(session.id, session);
     }
+
+    // Claude Code sessions override web app sessions
+    for (const session of claudeCodeSessions) {
+      sessionMap.set(session.id, session);
+    }
+
+    // Sort by last activity (most recent first)
+    return Array.from(sessionMap.values()).sort(
+      (a, b) => new Date(b.lastActivity).getTime() - new Date(a.lastActivity).getTime()
+    );
   }
 
-  private getSystemPrompt(workingDirectory: string): string {
-    return `You are Claude, an AI assistant helping with software development tasks.
-
-You have access to tools for reading, creating, and editing files, as well as running shell commands.
-
-Current working directory: ${workingDirectory}
-
-Guidelines:
-- Use the view command to read files before editing them
-- Use str_replace for editing existing files (old_str must be unique)
-- Use bash for running commands, tests, and git operations
-- Be concise in your responses
-- Explain what you're doing before using tools
-- After completing a task, summarize what was done`;
-  }
-
+  // Clear a session
   clearSession(sessionId: string): boolean {
-    return this.sessions.delete(sessionId);
+    return sessionStore.delete(sessionId);
   }
 
-  getSession(sessionId: string): ConversationSession | undefined {
-    return this.sessions.get(sessionId);
+  // Get total usage across all sessions (from Claude Code stats)
+  getTotalUsage(): { input: number; output: number; costUsd: number } {
+    return sessionStore.getTotalUsage();
   }
 
-  // Cleanup old sessions (older than 1 hour)
-  cleanup(): void {
-    const now = new Date();
-    const maxAge = 60 * 60 * 1000; // 1 hour
-
-    for (const [id, session] of this.sessions.entries()) {
-      if (now.getTime() - session.lastActivity.getTime() > maxAge) {
-        this.sessions.delete(id);
-      }
-    }
+  // Get Claude Code stats
+  getClaudeCodeStats() {
+    return sessionStore.getClaudeCodeStats();
   }
 }
 
 // Singleton instance
 export const agentService = new ClaudeAgentService();
-
-// Periodic cleanup
-setInterval(() => agentService.cleanup(), 5 * 60 * 1000); // Every 5 minutes

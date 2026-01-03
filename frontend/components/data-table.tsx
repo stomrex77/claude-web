@@ -3,14 +3,14 @@
 import * as React from "react"
 import {
   IconChevronRight,
+  IconChevronLeft,
   IconFolder,
-  IconGitBranch,
   IconMessage,
+  IconCoins,
 } from "@tabler/icons-react"
 import {
   flexRender,
   getCoreRowModel,
-  getPaginationRowModel,
   useReactTable,
   type ColumnDef,
 } from "@tanstack/react-table"
@@ -24,14 +24,27 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { Button } from "@/components/ui/button"
+import { type PaginationInfo } from "@/lib/api"
 
 export const schema = z.object({
-  id: z.number(),
+  id: z.string(),
   title: z.string(),
   directory: z.string(),
-  branch: z.string(),
   messages: z.number(),
+  inputTokens: z.number().optional(),
+  outputTokens: z.number().optional(),
 })
+
+function formatTokens(count: number): string {
+  if (count >= 1000000) {
+    return `${(count / 1000000).toFixed(1)}M`
+  }
+  if (count >= 1000) {
+    return `${(count / 1000).toFixed(1)}K`
+  }
+  return count.toString()
+}
 
 const columns: ColumnDef<z.infer<typeof schema>>[] = [
   {
@@ -48,18 +61,13 @@ const columns: ColumnDef<z.infer<typeof schema>>[] = [
     header: "Directory",
     cell: ({ row }) => (
       <div className="flex items-center gap-2 text-muted-foreground">
-        <IconFolder className="size-4" />
-        <span className="text-sm">{row.original.directory}</span>
-      </div>
-    ),
-  },
-  {
-    accessorKey: "branch",
-    header: "Branch",
-    cell: ({ row }) => (
-      <div className="flex items-center gap-2 text-muted-foreground">
-        <IconGitBranch className="size-4" />
-        <span className="text-sm">{row.original.branch}</span>
+        <IconFolder className="size-4 shrink-0" />
+        <span
+          className="text-sm max-w-[200px] overflow-hidden text-ellipsis whitespace-nowrap"
+          style={{ direction: "rtl", textAlign: "left" }}
+        >
+          {row.original.directory}
+        </span>
       </div>
     ),
   },
@@ -74,6 +82,21 @@ const columns: ColumnDef<z.infer<typeof schema>>[] = [
     ),
   },
   {
+    accessorKey: "tokens",
+    header: "Tokens",
+    cell: ({ row }) => {
+      const input = row.original.inputTokens || 0
+      const output = row.original.outputTokens || 0
+      const total = input + output
+      return (
+        <div className="flex items-center gap-2 text-muted-foreground">
+          <IconCoins className="size-4" />
+          <span className="text-sm tabular-nums">{formatTokens(total)}</span>
+        </div>
+      )
+    },
+  },
+  {
     id: "actions",
     cell: () => (
       <div className="flex items-center justify-end">
@@ -84,28 +107,23 @@ const columns: ColumnDef<z.infer<typeof schema>>[] = [
 ]
 
 export function DataTable({
-  data: initialData,
+  data,
+  pagination,
   onRowClick,
+  onNextPage,
+  onPrevPage,
 }: {
   data: z.infer<typeof schema>[]
+  pagination?: PaginationInfo | null
   onRowClick?: (conversation: z.infer<typeof schema>) => void
+  onNextPage?: () => void
+  onPrevPage?: () => void
 }) {
-  const [data] = React.useState(() => initialData)
-  const [pagination, setPagination] = React.useState({
-    pageIndex: 0,
-    pageSize: 10,
-  })
-
   const table = useReactTable({
     data,
     columns,
-    state: {
-      pagination,
-    },
-    getRowId: (row) => row.id.toString(),
-    onPaginationChange: setPagination,
+    getRowId: (row) => row.id,
     getCoreRowModel: getCoreRowModel(),
-    getPaginationRowModel: getPaginationRowModel(),
   })
 
   return (
@@ -164,6 +182,33 @@ export function DataTable({
             )}
           </TableBody>
         </Table>
+        {pagination && pagination.totalPages > 1 && (
+          <div className="flex items-center justify-between pt-4">
+            <p className="text-sm text-muted-foreground">
+              Page {pagination.page} of {pagination.totalPages} ({pagination.total} total)
+            </p>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={onPrevPage}
+                disabled={!pagination.hasPrev}
+              >
+                <IconChevronLeft className="size-4 mr-1" />
+                Previous
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={onNextPage}
+                disabled={!pagination.hasNext}
+              >
+                Next
+                <IconChevronRight className="size-4 ml-1" />
+              </Button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { DirectoryProvider } from "@/contexts/directory-context";
+import { AgentProvider } from "@/contexts/agent-context";
 import { Toaster } from "@/components/ui/sonner";
 
 const geistSans = Geist({
@@ -30,8 +31,10 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
         <DirectoryProvider>
-          {children}
-          <Toaster position="bottom-right" />
+          <AgentProvider>
+            {children}
+            <Toaster position="bottom-right" />
+          </AgentProvider>
         </DirectoryProvider>
       </body>
     </html>
