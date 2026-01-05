@@ -81,6 +81,7 @@ export default function ChatPage() {
   const {
     sendMessage,
     resumeSession,
+    clearSession,
     isStreaming,
     streamingBlocks,
     lastError,
@@ -94,8 +95,12 @@ export default function ChatPage() {
     if (urlSessionId && urlSessionId !== currentSessionId) {
       // URL has session - sync to context
       resumeSession(urlSessionId)
+    } else if (!urlSessionId && currentSessionId && !isStreaming) {
+      // No session in URL but context has one - clear for new chat
+      // Don't clear while streaming (session will be created)
+      clearSession()
     }
-  }, [urlSessionId, currentSessionId, resumeSession])
+  }, [urlSessionId, currentSessionId, resumeSession, clearSession, isStreaming])
 
   // Update URL when a NEW session is created (from streaming)
   useEffect(() => {
@@ -214,20 +219,10 @@ export default function ChatPage() {
 
   const status = isStreaming ? "streaming" : lastError ? "error" : "ready"
   
-  // Update global session state DURING RENDER (not in effect) so other instances see it immediately
-  const sessionId = urlSessionId || currentSessionId
-  if (sessionId) {
-    setGlobalLastKnownSessionId(sessionId)
-  }
-  
-  // Read global state for hasMessages calculation
-  const globalSession = getGlobalLastKnownSessionId()
-  const globalLoadComplete = getGlobalInitialLoadComplete()
-  
-  // Show chat UI if we have messages, are streaming, OR have a session (URL, context, or global)
-  // CRITICAL: Also show chat UI if initial load hasn't completed - this prevents the
-  // "new chat" flash during hydration when urlSessionId may briefly be null
-  const hasMessages = messages.length > 0 || isStreaming || pendingBlocks.length > 0 || streamingBlocks.length > 0 || !!urlSessionId || !!currentSessionId || !!globalSession || !globalLoadComplete
+  // Show chat UI with bottom prompt only when we have actual visible content
+  // or when loading messages for an existing session
+  // New chat (no messages) shows centered prompt like landing page
+  const hasMessages = messages.length > 0 || isStreaming || pendingBlocks.length > 0 || streamingBlocks.length > 0 || isLoadingMessages
 
   const handleSubmit: FormEventHandler<HTMLFormElement> = async (event) => {
     event.preventDefault()
