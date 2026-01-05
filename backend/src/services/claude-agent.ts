@@ -129,21 +129,24 @@ class ClaudeAgentService {
 
     try {
       for await (const message of query({ prompt: task, options })) {
+        // IMPORTANT: Check for init message and update sessionId BEFORE transforming
+        // This ensures all events get the correct sessionId
+        if (message.type === "system" && message.subtype === "init") {
+          currentSessionId = message.session_id;
+          // Store session metadata
+          sessionStore.upsert(currentSessionId, task, workingDirectory);
+
+          // Yield connected event with the new sessionId
+          yield {
+            type: "connected",
+            data: { sessionId: currentSessionId },
+          };
+        }
+
+        // Now transform with the (possibly updated) sessionId
         const event = this.transformMessage(message, currentSessionId);
 
         if (event) {
-          // Update session ID if we got it from init
-          if (message.type === "system" && message.subtype === "init") {
-            currentSessionId = message.session_id;
-            // Store session metadata
-            sessionStore.upsert(currentSessionId, task, workingDirectory);
-
-            yield {
-              type: "connected",
-              data: { sessionId: currentSessionId },
-            };
-          }
-
           yield event;
         }
       }

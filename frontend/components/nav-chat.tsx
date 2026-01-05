@@ -20,11 +20,17 @@ export function NavChat() {
   const recentSessions = sessions.slice(0, 5)
 
   const handleNewChat = () => {
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/05a2cc4b-7e4a-44fb-a5e5-d1c65c36bda6',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'nav-chat.tsx:NEW_CHAT_CLICK',message:'New Chat button clicked',data:{},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'G'})}).catch(()=>{});
+    // #endregion
     clearSession()
     router.push("/chat")
   }
 
   const handleResumeChat = (sessionId: string) => {
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/05a2cc4b-7e4a-44fb-a5e5-d1c65c36bda6',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'nav-chat.tsx:RESUME_CHAT_CLICK',message:'Resume Chat clicked',data:{sessionId},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'G'})}).catch(()=>{});
+    // #endregion
     // Navigate with session in URL - the chat page will sync with context
     router.push(`/chat?session=${sessionId}`)
   }

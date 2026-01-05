@@ -30,10 +30,53 @@ const models = [
   { id: "claude-haiku", name: "Claude Haiku" },
 ]
 
+// Use window object to store shared state - persists across module reloads in dev mode
+// This prevents flash to "new chat" during brief null transitions with multiple component instances
+interface ChatGlobalState {
+  __chatLastKnownSessionId?: string
+  __chatInitialLoadComplete?: boolean
+}
+
+const getGlobalLastKnownSessionId = (): string | null => {
+  if (typeof window !== 'undefined') {
+    return (window as ChatGlobalState).__chatLastKnownSessionId || null
+  }
+  return null
+}
+
+const setGlobalLastKnownSessionId = (sessionId: string | null) => {
+  if (typeof window !== 'undefined') {
+    (window as ChatGlobalState).__chatLastKnownSessionId = sessionId || undefined
+  }
+}
+
+const getGlobalInitialLoadComplete = (): boolean => {
+  if (typeof window !== 'undefined') {
+    return (window as ChatGlobalState).__chatInitialLoadComplete || false
+  }
+  return false
+}
+
+const setGlobalInitialLoadComplete = (complete: boolean) => {
+  if (typeof window !== 'undefined') {
+    (window as ChatGlobalState).__chatInitialLoadComplete = complete
+  }
+}
+
 export default function ChatPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const urlSessionId = searchParams.get("session")
+  
+  // #region agent log
+  useEffect(() => {
+    const mountTime = Date.now();
+    fetch('http://127.0.0.1:7242/ingest/05a2cc4b-7e4a-44fb-a5e5-d1c65c36bda6',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'chat/page.tsx:MOUNT',message:'ChatPage component MOUNTED',data:{urlSessionId,mountTime},timestamp:mountTime,sessionId:'debug-session',hypothesisId:'F'})}).catch(()=>{});
+    return () => {
+      fetch('http://127.0.0.1:7242/ingest/05a2cc4b-7e4a-44fb-a5e5-d1c65c36bda6',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'chat/page.tsx:UNMOUNT',message:'ChatPage component UNMOUNTED',data:{mountTime},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'F'})}).catch(()=>{});
+    };
+  }, []);
+  // #endregion
 
   const [text, setText] = useState<string>("")
   const [model, setModel] = useState<string>(models[0].id)
@@ -43,6 +86,7 @@ export default function ChatPage() {
   const prevIsStreaming = useRef(false)
   // Track if we're creating a new session (started streaming without URL session)
   const isCreatingNewSession = useRef(false)
+  // NOTE: initialLoadComplete is now global (stored on window) to coordinate across instances
   const { rootDirectory } = useDirectory()
   const {
     sendMessage,
@@ -52,6 +96,8 @@ export default function ChatPage() {
     lastError,
     currentSessionId,
   } = useAgent()
+
+  // NOTE: globalLastKnownSessionId is now updated during render (see hasMessages calculation)
 
   // Sync URL session with context on mount/URL change
   useEffect(() => {
@@ -63,8 +109,14 @@ export default function ChatPage() {
 
   // Update URL when a NEW session is created (from streaming)
   useEffect(() => {
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/05a2cc4b-7e4a-44fb-a5e5-d1c65c36bda6',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'chat/page.tsx:URL_UPDATE_EFFECT',message:'URL update effect triggered',data:{currentSessionId,urlSessionId,isCreatingNewSession:isCreatingNewSession.current},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A,C'})}).catch(()=>{});
+    // #endregion
     // Only redirect if we're actively creating a new session
     if (currentSessionId && !urlSessionId && isCreatingNewSession.current) {
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/05a2cc4b-7e4a-44fb-a5e5-d1c65c36bda6',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'chat/page.tsx:URL_REPLACE',message:'Calling router.replace to update URL',data:{newUrl:`/chat?session=${currentSessionId}`},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A'})}).catch(()=>{});
+      // #endregion
       router.replace(`/chat?session=${currentSessionId}`, { scroll: false })
       isCreatingNewSession.current = false
     }
@@ -72,10 +124,15 @@ export default function ChatPage() {
 
   // Load messages when URL session changes (initial load or navigation)
   // Note: This does NOT run when streaming ends - that's handled by handleStreamEnd
-  const prevUrlSessionId = useRef<string | null>(null)
+  // Use undefined as sentinel to distinguish "never loaded" from "loaded with null"
+  const prevUrlSessionId = useRef<string | null | undefined>(undefined)
   useEffect(() => {
     async function loadMessages() {
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/05a2cc4b-7e4a-44fb-a5e5-d1c65c36bda6',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'chat/page.tsx:LOAD_MESSAGES',message:'loadMessages called',data:{urlSessionId,prevUrlSessionId:prevUrlSessionId.current,isStreaming,globalLoadComplete:getGlobalInitialLoadComplete()},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'D,E,H'})}).catch(()=>{});
+      // #endregion
       // Only load if URL session actually changed (not just on mount during streaming)
+      // Note: undefined !== null, so this will run on first mount even with null urlSessionId
       if (urlSessionId === prevUrlSessionId.current) {
         return
       }
@@ -84,8 +141,23 @@ export default function ChatPage() {
       if (!urlSessionId) {
         // No session in URL - clear messages (new chat)
         if (!isStreaming) {
+          // Check if another instance has already set a session (two-instance mount scenario)
+          const existingGlobalSession = getGlobalLastKnownSessionId()
+          // #region agent log
+          fetch('http://127.0.0.1:7242/ingest/05a2cc4b-7e4a-44fb-a5e5-d1c65c36bda6',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'chat/page.tsx:CLEAR_MESSAGES',message:'Clearing messages - no URL session and not streaming',data:{urlSessionId,isStreaming,wasOnSession:!!prevUrlSessionId.current,existingGlobalSession},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'E'})}).catch(()=>{});
+          // #endregion
           setMessages([])
           setPendingBlocks([])
+          // Only reset global state if we were previously on a session AND no other instance
+          // has set a session. This prevents the null-instance from overwriting the session-instance.
+          if (prevUrlSessionId.current && !existingGlobalSession) {
+            setGlobalLastKnownSessionId(null)
+            setGlobalInitialLoadComplete(true)
+          } else if (!existingGlobalSession) {
+            // First mount with no session and no global session - mark load complete
+            setGlobalInitialLoadComplete(true)
+          }
+          // If existingGlobalSession is set, don't mark as complete - let the other instance handle it
         }
         return
       }
@@ -100,8 +172,12 @@ export default function ChatPage() {
         const msgs = await getSessionMessages(urlSessionId)
         setMessages(msgs)
         setPendingBlocks([]) // Clear any stale pending blocks
+        // Mark initial load as complete - we've loaded session messages
+        setGlobalInitialLoadComplete(true)
       } catch (error) {
         console.error("Failed to load messages:", error)
+        // Even on error, mark as complete so we don't stay in loading state forever
+        setGlobalInitialLoadComplete(true)
       } finally {
         setIsLoadingMessages(false)
       }
@@ -159,14 +235,33 @@ export default function ChatPage() {
   }, [isStreaming, currentSessionId, streamingBlocks])
 
   const status = isStreaming ? "streaming" : lastError ? "error" : "ready"
-  // Show chat UI if we have messages, are streaming, OR have a session in the URL
-  const hasMessages = messages.length > 0 || isStreaming || pendingBlocks.length > 0 || streamingBlocks.length > 0 || !!urlSessionId
+  
+  // Update global session state DURING RENDER (not in effect) so other instances see it immediately
+  const sessionId = urlSessionId || currentSessionId
+  if (sessionId) {
+    setGlobalLastKnownSessionId(sessionId)
+  }
+  
+  // Read global state for hasMessages calculation
+  const globalSession = getGlobalLastKnownSessionId()
+  const globalLoadComplete = getGlobalInitialLoadComplete()
+  
+  // Show chat UI if we have messages, are streaming, OR have a session (URL, context, or global)
+  // CRITICAL: Also show chat UI if initial load hasn't completed - this prevents the
+  // "new chat" flash during hydration when urlSessionId may briefly be null
+  const hasMessages = messages.length > 0 || isStreaming || pendingBlocks.length > 0 || streamingBlocks.length > 0 || !!urlSessionId || !!currentSessionId || !!globalSession || !globalLoadComplete
+  // #region agent log
+  fetch('http://127.0.0.1:7242/ingest/05a2cc4b-7e4a-44fb-a5e5-d1c65c36bda6',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'chat/page.tsx:HAS_MESSAGES_CALC',message:'hasMessages calculated',data:{hasMessages,messagesLen:messages.length,isStreaming,pendingBlocksLen:pendingBlocks.length,streamingBlocksLen:streamingBlocks.length,urlSessionId,currentSessionId,globalSession,globalLoadComplete},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'B,H'})}).catch(()=>{});
+  // #endregion
 
   const handleSubmit: FormEventHandler<HTMLFormElement> = async (event) => {
     event.preventDefault()
     if (!text || isStreaming) {
       return
     }
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/05a2cc4b-7e4a-44fb-a5e5-d1c65c36bda6',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'chat/page.tsx:HANDLE_SUBMIT',message:'Form submitted',data:{urlSessionId,text:text.slice(0,50)},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A'})}).catch(()=>{});
+    // #endregion
 
     // Cancel any pending message reloads from previous stream
     loadRequestId.current++
