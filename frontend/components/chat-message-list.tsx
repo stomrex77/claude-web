@@ -32,15 +32,25 @@ export function ChatMessageList({
   const scrollRef = useRef<HTMLDivElement>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
 
-  // Scroll to bottom on mount and when messages change
+  // Helper to scroll to bottom within the container only (not the whole page)
+  const scrollToBottom = (smooth = false) => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTo({
+        top: scrollRef.current.scrollHeight,
+        behavior: smooth ? "smooth" : "instant",
+      })
+    }
+  }
+
+  // Scroll to bottom when messages change (new session or new message)
   useLayoutEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "instant" })
+    scrollToBottom(false)
   }, [messages.length])
 
   // Smooth scroll for streaming block updates
   useEffect(() => {
     if (streamingBlocks && streamingBlocks.length > 0) {
-      bottomRef.current?.scrollIntoView({ behavior: "smooth" })
+      scrollToBottom(true)
     }
   }, [streamingBlocks])
 

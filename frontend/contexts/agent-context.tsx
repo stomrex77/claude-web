@@ -35,12 +35,16 @@ interface AgentState {
   pagination: PaginationInfo | null;
   currentSessionId: string | null;
   isStreaming: boolean;
+  // Which session is currently streaming (may differ from currentSessionId if user navigated away)
+  streamingSessionId: string | null;
   streamingBlocks: StreamingBlock[];
   usage: {
     currentSession: UsageData;
     total: UsageData;
   };
   lastError: string | null;
+  // Session IDs that have been interacted with in this browser session
+  interactedSessionIds: Set<string>;
 }
 
 interface AgentContextValue extends AgentState {
@@ -51,9 +55,36 @@ interface AgentContextValue extends AgentState {
   resumeSession: (sessionId: string) => void;
   clearSession: () => void;
   refreshUsage: () => Promise<void>;
+  markSessionInteracted: (sessionId: string) => void;
 }
 
 const AgentContext = createContext<AgentContextValue | null>(null);
+
+const INTERACTED_SESSIONS_KEY = "claude-web-interacted-sessions";
+
+// Load interacted sessions from localStorage
+function loadInteractedSessions(): Set<string> {
+  if (typeof window === "undefined") return new Set();
+  try {
+    const stored = localStorage.getItem(INTERACTED_SESSIONS_KEY);
+    if (stored) {
+      return new Set(JSON.parse(stored));
+    }
+  } catch (e) {
+    console.error("Failed to load interacted sessions:", e);
+  }
+  return new Set();
+}
+
+// Save interacted sessions to localStorage
+function saveInteractedSessions(sessionIds: Set<string>) {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(INTERACTED_SESSIONS_KEY, JSON.stringify([...sessionIds]));
+  } catch (e) {
+    console.error("Failed to save interacted sessions:", e);
+  }
+}
 
 export function AgentProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<AgentState>({
@@ -61,13 +92,23 @@ export function AgentProvider({ children }: { children: ReactNode }) {
     pagination: null,
     currentSessionId: null,
     isStreaming: false,
+    streamingSessionId: null,
     streamingBlocks: [],
     usage: {
       currentSession: { input: 0, output: 0, costUsd: 0 },
       total: { input: 0, output: 0, costUsd: 0 },
     },
     lastError: null,
+    interactedSessionIds: new Set(),
   });
+
+  // Load interacted sessions from localStorage on mount
+  useEffect(() => {
+    const loaded = loadInteractedSessions();
+    if (loaded.size > 0) {
+      setState((prev) => ({ ...prev, interactedSessionIds: loaded }));
+    }
+  }, []);
 
   // Ref to always hold the latest currentSessionId - fixes stale closure issue
   // When sendMessage is called, it reads from this ref to get the most up-to-date value
@@ -181,10 +222,18 @@ export function AgentProvider({ children }: { children: ReactNode }) {
           const newSessionId = data.sessionId as string;
           // Update ref IMMEDIATELY so subsequent messages use correct sessionId
           currentSessionIdRef.current = newSessionId;
-          setState((prev) => ({
-            ...prev,
-            currentSessionId: newSessionId,
-          }));
+          setState((prev) => {
+            // Also mark this session as interacted in this browser session
+            const newInteracted = new Set(prev.interactedSessionIds);
+            newInteracted.add(newSessionId);
+            saveInteractedSessions(newInteracted);
+            return {
+              ...prev,
+              currentSessionId: newSessionId,
+              streamingSessionId: newSessionId,
+              interactedSessionIds: newInteracted,
+            };
+          });
         }
         break;
 
@@ -218,10 +267,19 @@ export function AgentProvider({ children }: { children: ReactNode }) {
             costUsd?: number;
           } | undefined;
 
+          // Don't override currentSessionId if user has navigated to a different session
+          // Only update if: no current session, or current session matches the streaming one
+          const shouldKeepCurrentSession = prev.currentSessionId &&
+            sessionId &&
+            prev.currentSessionId !== sessionId;
+
           return {
             ...prev,
             isStreaming: false,
-            currentSessionId: sessionId || prev.currentSessionId,
+            streamingSessionId: null,
+            currentSessionId: shouldKeepCurrentSession
+              ? prev.currentSessionId
+              : (sessionId || prev.currentSessionId),
             usage: usage
               ? {
                   currentSession: {
@@ -243,6 +301,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
       case "error":
         setState((prev) => ({
           ...prev,
+          streamingSessionId: null,
           isStreaming: false,
           lastError: (data?.message as string) || "Unknown error",
         }));
@@ -317,6 +376,18 @@ export function AgentProvider({ children }: { children: ReactNode }) {
     }));
   }, []);
 
+  const markSessionInteracted = useCallback((sessionId: string) => {
+    setState((prev) => {
+      if (prev.interactedSessionIds.has(sessionId)) {
+        return prev;
+      }
+      const newSet = new Set(prev.interactedSessionIds);
+      newSet.add(sessionId);
+      saveInteractedSessions(newSet);
+      return { ...prev, interactedSessionIds: newSet };
+    });
+  }, []);
+
   const value: AgentContextValue = {
     ...state,
     sendMessage,
@@ -326,6 +397,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
     resumeSession,
     clearSession,
     refreshUsage,
+    markSessionInteracted,
   };
 
   return (

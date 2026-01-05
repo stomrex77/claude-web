@@ -83,6 +83,7 @@ export default function ChatPage() {
     resumeSession,
     clearSession,
     isStreaming,
+    streamingSessionId,
     streamingBlocks,
     lastError,
     currentSessionId,
@@ -126,7 +127,8 @@ export default function ChatPage() {
 
       if (!urlSessionId) {
         // No session in URL - clear messages (new chat)
-        if (!isStreaming) {
+        // Only clear if we're not streaming on a new session being created
+        if (!isStreaming || currentSessionId) {
           // Check if another instance has already set a session (two-instance mount scenario)
           const existingGlobalSession = getGlobalLastKnownSessionId()
           setMessages([])
@@ -145,8 +147,9 @@ export default function ChatPage() {
         return
       }
 
-      // Don't load while streaming - we have optimistic updates
-      if (isStreaming) {
+      // Don't load while streaming on THIS session - we have optimistic updates
+      // But DO allow loading if streaming is on a DIFFERENT session
+      if (isStreaming && currentSessionId === urlSessionId) {
         return
       }
 
@@ -167,7 +170,7 @@ export default function ChatPage() {
     }
 
     loadMessages()
-  }, [urlSessionId, isStreaming])
+  }, [urlSessionId, isStreaming, currentSessionId])
 
   // Track if we should skip the next message reload (when user sends new message quickly)
   const loadRequestId = useRef(0)
@@ -233,12 +236,16 @@ export default function ChatPage() {
     handleStreamEnd()
   }, [isStreaming, currentSessionId, streamingBlocks])
 
-  const status = isStreaming ? "streaming" : lastError ? "error" : "ready"
-  
+  // Only consider streaming state if we're viewing the session that's streaming
+  const isStreamingThisSession = isStreaming && streamingSessionId === urlSessionId
+  const streamingBlocksForThisSession = isStreamingThisSession ? streamingBlocks : []
+
+  const status = isStreamingThisSession ? "streaming" : lastError ? "error" : "ready"
+
   // Show chat UI with bottom prompt only when we have actual visible content
   // or when loading messages for an existing session
   // New chat (no messages) shows centered prompt like landing page
-  const hasMessages = messages.length > 0 || isStreaming || pendingBlocks.length > 0 || streamingBlocks.length > 0 || isLoadingMessages
+  const hasMessages = messages.length > 0 || isStreamingThisSession || pendingBlocks.length > 0 || streamingBlocksForThisSession.length > 0 || isLoadingMessages
 
   const handleSubmit: FormEventHandler<HTMLFormElement> = async (event) => {
     event.preventDefault()
@@ -296,9 +303,9 @@ export default function ChatPage() {
               ) : (
                 <ChatMessageList
                   messages={messages}
-                  streamingBlocks={streamingBlocks}
+                  streamingBlocks={streamingBlocksForThisSession}
                   pendingBlocks={pendingBlocks}
-                  isStreaming={isStreaming}
+                  isStreaming={isStreamingThisSession}
                 />
               )}
 
