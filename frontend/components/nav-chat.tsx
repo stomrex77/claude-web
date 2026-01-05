@@ -14,7 +14,7 @@ import {
 
 export function NavChat() {
   const router = useRouter()
-  const { sessions, resumeSession, clearSession } = useAgent()
+  const { sessions, clearSession } = useAgent()
 
   // Get the 5 most recent sessions
   const recentSessions = sessions.slice(0, 5)
@@ -25,8 +25,8 @@ export function NavChat() {
   }
 
   const handleResumeChat = (sessionId: string) => {
-    resumeSession(sessionId)
-    router.push("/chat")
+    // Navigate with session in URL - the chat page will sync with context
+    router.push(`/chat?session=${sessionId}`)
   }
 
   return (

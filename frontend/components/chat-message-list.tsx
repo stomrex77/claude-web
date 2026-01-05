@@ -2,12 +2,15 @@
 
 import { useEffect, useRef, useLayoutEffect } from "react"
 import { ChatMessage } from "@/components/chat-message"
+import { StreamingMessage } from "@/components/streaming-message"
 import type { ChatMessage as ChatMessageType } from "@/lib/api"
+import type { StreamingBlock } from "@/contexts/agent-context"
 import { IconRobot } from "@tabler/icons-react"
 
 interface ChatMessageListProps {
   messages: ChatMessageType[]
-  streamingContent?: string
+  streamingBlocks?: StreamingBlock[]
+  pendingBlocks?: StreamingBlock[]
   isStreaming?: boolean
 }
 
@@ -22,7 +25,8 @@ function StreamingDot() {
 
 export function ChatMessageList({
   messages,
-  streamingContent,
+  streamingBlocks,
+  pendingBlocks,
   isStreaming,
 }: ChatMessageListProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -33,12 +37,12 @@ export function ChatMessageList({
     bottomRef.current?.scrollIntoView({ behavior: "instant" })
   }, [messages.length])
 
-  // Smooth scroll for streaming content updates
+  // Smooth scroll for streaming block updates
   useEffect(() => {
-    if (streamingContent) {
+    if (streamingBlocks && streamingBlocks.length > 0) {
       bottomRef.current?.scrollIntoView({ behavior: "smooth" })
     }
-  }, [streamingContent])
+  }, [streamingBlocks])
 
   return (
     <div
@@ -64,21 +68,20 @@ export function ChatMessageList({
                 <ChatMessage key={message.id} message={message} />
               ))}
 
-              {/* Streaming message */}
-              {isStreaming && streamingContent && (
-                <ChatMessage
-                  message={{
-                    id: "streaming",
-                    type: "assistant",
-                    content: streamingContent,
-                    timestamp: new Date().toISOString(),
-                    isStreaming: true,
-                  }}
-                />
+              {/* Streaming message - show during streaming with blocks */}
+              {isStreaming && streamingBlocks && streamingBlocks.length > 0 && (
+                <StreamingMessage blocks={streamingBlocks} />
+              )}
+
+              {/* Pending blocks - show after streaming ends while loading from backend */}
+              {/* Only show if the last message isn't already an assistant response */}
+              {!isStreaming && pendingBlocks && pendingBlocks.length > 0 &&
+               messages[messages.length - 1]?.type !== 'assistant' && (
+                <StreamingMessage blocks={pendingBlocks} />
               )}
 
               {/* Loading indicator - timeline style */}
-              {isStreaming && !streamingContent && (
+              {isStreaming && (!streamingBlocks || streamingBlocks.length === 0) && (
                 <div className="py-2">
                   <div className="flex items-start gap-3">
                     <StreamingDot />

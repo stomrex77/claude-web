@@ -1,6 +1,7 @@
 "use client"
 
-import { useState, useEffect, type FormEventHandler } from "react"
+import { useState, useEffect, useRef, type FormEventHandler } from "react"
+import { useRouter, useSearchParams } from "next/navigation"
 import { Image, MoreHorizontal } from "lucide-react"
 import { AppSidebar } from "@/components/app-sidebar"
 import { SiteHeader } from "@/components/site-header"
@@ -19,7 +20,7 @@ import {
   PromptInputToolbar,
   PromptInputTools,
 } from "@/components/ui/prompt-input"
-import { useAgent } from "@/contexts/agent-context"
+import { useAgent, type StreamingBlock } from "@/contexts/agent-context"
 import { useDirectory } from "@/contexts/directory-context"
 import { getSessionMessages, type ChatMessage } from "@/lib/api"
 
@@ -30,66 +31,149 @@ const models = [
 ]
 
 export default function ChatPage() {
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  const urlSessionId = searchParams.get("session")
+
   const [text, setText] = useState<string>("")
   const [model, setModel] = useState<string>(models[0].id)
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [isLoadingMessages, setIsLoadingMessages] = useState(false)
+  const [pendingBlocks, setPendingBlocks] = useState<StreamingBlock[]>([])
+  const prevIsStreaming = useRef(false)
+  // Track if we're creating a new session (started streaming without URL session)
+  const isCreatingNewSession = useRef(false)
   const { rootDirectory } = useDirectory()
   const {
     sendMessage,
+    resumeSession,
     isStreaming,
-    streamingContent,
+    streamingBlocks,
     lastError,
     currentSessionId,
   } = useAgent()
 
-  // Load messages when session changes
+  // Sync URL session with context on mount/URL change
+  useEffect(() => {
+    if (urlSessionId && urlSessionId !== currentSessionId) {
+      // URL has session - sync to context
+      resumeSession(urlSessionId)
+    }
+  }, [urlSessionId, currentSessionId, resumeSession])
+
+  // Update URL when a NEW session is created (from streaming)
+  useEffect(() => {
+    // Only redirect if we're actively creating a new session
+    if (currentSessionId && !urlSessionId && isCreatingNewSession.current) {
+      router.replace(`/chat?session=${currentSessionId}`, { scroll: false })
+      isCreatingNewSession.current = false
+    }
+  }, [currentSessionId, urlSessionId, router])
+
+  // Load messages when URL session changes (initial load or navigation)
+  // Note: This does NOT run when streaming ends - that's handled by handleStreamEnd
+  const prevUrlSessionId = useRef<string | null>(null)
   useEffect(() => {
     async function loadMessages() {
-      if (!currentSessionId) {
-        setMessages([])
+      // Only load if URL session actually changed (not just on mount during streaming)
+      if (urlSessionId === prevUrlSessionId.current) {
+        return
+      }
+      prevUrlSessionId.current = urlSessionId
+
+      if (!urlSessionId) {
+        // No session in URL - clear messages (new chat)
+        if (!isStreaming) {
+          setMessages([])
+          setPendingBlocks([])
+        }
+        return
+      }
+
+      // Don't load while streaming - we have optimistic updates
+      if (isStreaming) {
         return
       }
 
       setIsLoadingMessages(true)
       try {
-        const msgs = await getSessionMessages(currentSessionId)
+        const msgs = await getSessionMessages(urlSessionId)
         setMessages(msgs)
+        setPendingBlocks([]) // Clear any stale pending blocks
       } catch (error) {
         console.error("Failed to load messages:", error)
-        setMessages([])
       } finally {
         setIsLoadingMessages(false)
       }
     }
 
     loadMessages()
-  }, [currentSessionId])
+  }, [urlSessionId, isStreaming])
 
-  // Reload messages after streaming completes
+  // Track if we should skip the next message reload (when user sends new message quickly)
+  const loadRequestId = useRef(0)
+
+  // Capture streaming blocks when streaming ends and reload messages
   useEffect(() => {
-    async function reloadAfterStream() {
-      if (!isStreaming && currentSessionId && streamingContent) {
-        await new Promise((resolve) => setTimeout(resolve, 500))
-        try {
-          const msgs = await getSessionMessages(currentSessionId)
-          setMessages(msgs)
-        } catch (error) {
-          console.error("Failed to reload messages:", error)
+    async function handleStreamEnd() {
+      // Detect transition from streaming to not streaming
+      if (prevIsStreaming.current && !isStreaming) {
+        // Capture full blocks (including tool calls) to display while loading
+        if (streamingBlocks.length > 0) {
+          setPendingBlocks([...streamingBlocks])
+        }
+
+        // Reload messages from backend
+        if (currentSessionId) {
+          const requestId = ++loadRequestId.current
+
+          // Small delay to ensure backend has processed the message
+          await new Promise((resolve) => setTimeout(resolve, 300))
+
+          // Check if a new request was made (user sent another message)
+          if (loadRequestId.current !== requestId) {
+            return // Skip this reload, newer one will handle it
+          }
+
+          try {
+            const msgs = await getSessionMessages(currentSessionId)
+
+            // Double check we're still the latest request
+            if (loadRequestId.current !== requestId) {
+              return
+            }
+
+            setMessages(msgs)
+            // Clear pending blocks after successful load
+            setPendingBlocks([])
+          } catch (error) {
+            console.error("Failed to reload messages:", error)
+            // Keep pending blocks visible on error
+          }
         }
       }
+      prevIsStreaming.current = isStreaming
     }
 
-    reloadAfterStream()
-  }, [isStreaming, currentSessionId, streamingContent])
+    handleStreamEnd()
+  }, [isStreaming, currentSessionId, streamingBlocks])
 
   const status = isStreaming ? "streaming" : lastError ? "error" : "ready"
-  const hasMessages = messages.length > 0 || isStreaming
+  // Show chat UI if we have messages, are streaming, OR have a session in the URL
+  const hasMessages = messages.length > 0 || isStreaming || pendingBlocks.length > 0 || streamingBlocks.length > 0 || !!urlSessionId
 
   const handleSubmit: FormEventHandler<HTMLFormElement> = async (event) => {
     event.preventDefault()
     if (!text || isStreaming) {
       return
+    }
+
+    // Cancel any pending message reloads from previous stream
+    loadRequestId.current++
+
+    // Track if we're starting a new session (no session in URL)
+    if (!urlSessionId) {
+      isCreatingNewSession.current = true
     }
 
     // Add user message optimistically
@@ -100,6 +184,9 @@ export default function ChatPage() {
       timestamp: new Date().toISOString(),
     }
     setMessages((prev) => [...prev, userMessage])
+
+    // Clear pending blocks from previous response
+    setPendingBlocks([])
 
     const message = text
     setText("")
@@ -131,7 +218,8 @@ export default function ChatPage() {
               ) : (
                 <ChatMessageList
                   messages={messages}
-                  streamingContent={streamingContent}
+                  streamingBlocks={streamingBlocks}
+                  pendingBlocks={pendingBlocks}
                   isStreaming={isStreaming}
                 />
               )}

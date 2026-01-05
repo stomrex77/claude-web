@@ -15,6 +15,7 @@ import {
   type SessionMetadata,
   type AgentStreamEvent,
   type PaginationInfo,
+  type ToolCall,
 } from "@/lib/api";
 
 interface UsageData {
@@ -23,12 +24,17 @@ interface UsageData {
   costUsd: number;
 }
 
+// Streaming block types for interleaved content
+export type StreamingBlock =
+  | { type: 'text'; content: string }
+  | { type: 'tool'; tool: ToolCall };
+
 interface AgentState {
   sessions: SessionMetadata[];
   pagination: PaginationInfo | null;
   currentSessionId: string | null;
   isStreaming: boolean;
-  streamingContent: string;
+  streamingBlocks: StreamingBlock[];
   usage: {
     currentSession: UsageData;
     total: UsageData;
@@ -54,7 +60,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
     pagination: null,
     currentSessionId: null,
     isStreaming: false,
-    streamingContent: "",
+    streamingBlocks: [],
     usage: {
       currentSession: { input: 0, output: 0, costUsd: 0 },
       total: { input: 0, output: 0, costUsd: 0 },
@@ -110,7 +116,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
       setState((prev) => ({
         ...prev,
         isStreaming: true,
-        streamingContent: "",
+        streamingBlocks: [],
         lastError: null,
         usage: { ...prev.usage, currentSession: { input: 0, output: 0, costUsd: 0 } },
       }));
@@ -157,10 +163,22 @@ export function AgentProvider({ children }: { children: ReactNode }) {
 
       case "token":
         if (data?.text) {
-          setState((prev) => ({
-            ...prev,
-            streamingContent: prev.streamingContent + (data.text as string),
-          }));
+          setState((prev) => {
+            const blocks = [...prev.streamingBlocks];
+            const lastBlock = blocks[blocks.length - 1];
+
+            // If the last block is text, append to it; otherwise create new text block
+            if (lastBlock && lastBlock.type === 'text') {
+              blocks[blocks.length - 1] = {
+                type: 'text',
+                content: lastBlock.content + (data.text as string),
+              };
+            } else {
+              blocks.push({ type: 'text', content: data.text as string });
+            }
+
+            return { ...prev, streamingBlocks: blocks };
+          });
         }
         break;
 
@@ -203,8 +221,50 @@ export function AgentProvider({ children }: { children: ReactNode }) {
         }));
         break;
 
+      case "tool_use":
+        if (data) {
+          const input = data.input as Record<string, unknown>;
+          const toolType = (data.name as string)?.toLowerCase() || "unknown";
+
+          // Extract display name based on tool type
+          let displayName = (data.name as string) || "Tool";
+          if (toolType === "bash" && input?.command) {
+            displayName = String(input.command).slice(0, 60) + (String(input.command).length > 60 ? "..." : "");
+          } else if ((toolType === "read" || toolType === "write" || toolType === "edit") && input?.file_path) {
+            displayName = String(input.file_path);
+          } else if ((toolType === "glob" || toolType === "grep") && input?.pattern) {
+            displayName = String(input.pattern);
+          }
+
+          const toolCall: ToolCall = {
+            id: (data.id as string) || `tool-${Date.now()}`,
+            type: toolType,
+            name: displayName,
+            input: input,
+          };
+
+          setState((prev) => ({
+            ...prev,
+            streamingBlocks: [...prev.streamingBlocks, { type: 'tool', tool: toolCall }],
+          }));
+        }
+        break;
+
+      case "tool_result":
+        if (data) {
+          const toolId = data.toolUseId as string;
+          setState((prev) => ({
+            ...prev,
+            streamingBlocks: prev.streamingBlocks.map((block) =>
+              block.type === 'tool' && block.tool.id === toolId
+                ? { ...block, tool: { ...block.tool, result: (data.content as string) || "Done" } }
+                : block
+            ),
+          }));
+        }
+        break;
+
       default:
-        // Handle tool_use and tool_result if needed
         break;
     }
   }, []);
@@ -213,7 +273,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
     setState((prev) => ({
       ...prev,
       currentSessionId: sessionId,
-      streamingContent: "",
+      streamingBlocks: [],
     }));
   }, []);
 
@@ -221,7 +281,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
     setState((prev) => ({
       ...prev,
       currentSessionId: null,
-      streamingContent: "",
+      streamingBlocks: [],
       usage: { ...prev.usage, currentSession: { input: 0, output: 0, costUsd: 0 } },
     }));
   }, []);
