@@ -57,34 +57,36 @@ export function ChatMessageList({
           {/* Spacer to push content to bottom when there's not much content */}
           <div className="flex-1" />
 
-          {/* Messages container */}
-          <div className="py-4 space-y-1">
-            {messages.map((message) => (
-              <ChatMessage key={message.id} message={message} />
-            ))}
+          {/* Messages container with horizontal padding */}
+          <div className="py-4 space-y-1 px-4 md:px-8 lg:px-16">
+            <div className="max-w-4xl mx-auto">
+              {messages.map((message) => (
+                <ChatMessage key={message.id} message={message} />
+              ))}
 
-            {/* Streaming message */}
-            {isStreaming && streamingContent && (
-              <ChatMessage
-                message={{
-                  id: "streaming",
-                  type: "assistant",
-                  content: streamingContent,
-                  timestamp: new Date().toISOString(),
-                  isStreaming: true,
-                }}
-              />
-            )}
+              {/* Streaming message */}
+              {isStreaming && streamingContent && (
+                <ChatMessage
+                  message={{
+                    id: "streaming",
+                    type: "assistant",
+                    content: streamingContent,
+                    timestamp: new Date().toISOString(),
+                    isStreaming: true,
+                  }}
+                />
+              )}
 
-            {/* Loading indicator - timeline style */}
-            {isStreaming && !streamingContent && (
-              <div className="px-4 py-2">
-                <div className="flex items-start gap-3">
-                  <StreamingDot />
-                  <span className="text-muted-foreground">Thinking...</span>
+              {/* Loading indicator - timeline style */}
+              {isStreaming && !streamingContent && (
+                <div className="py-2">
+                  <div className="flex items-start gap-3">
+                    <StreamingDot />
+                    <span className="text-muted-foreground font-mono text-sm">Thinking...</span>
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
+            </div>
           </div>
 
           {/* Scroll anchor */}

@@ -282,9 +282,9 @@ export function ChatMessage({ message }: ChatMessageProps) {
   // User message - dark card style
   if (isUser) {
     return (
-      <div className="flex justify-end px-4 py-2">
+      <div className="flex justify-end py-3">
         <div className="max-w-[85%] rounded-xl bg-zinc-800 dark:bg-zinc-800 px-4 py-3 text-zinc-100">
-          <p className="whitespace-pre-wrap break-words">{message.content}</p>
+          <p className="whitespace-pre-wrap break-words leading-relaxed">{message.content}</p>
         </div>
       </div>
     )
@@ -292,7 +292,7 @@ export function ChatMessage({ message }: ChatMessageProps) {
 
   // Assistant message - timeline style with status dot
   return (
-    <div className="px-4 py-2">
+    <div className="py-3">
       {/* Main text content with markdown rendering */}
       {message.content && (
         <div className="flex items-start gap-3">

@@ -137,8 +137,8 @@ export default function ChatPage() {
               )}
 
               {/* Input Area at Bottom - fixed height */}
-              <div className="border-t bg-background p-4 shrink-0">
-                <div className="mx-auto max-w-3xl">
+              <div className="border-t bg-background px-4 md:px-8 lg:px-16 py-4 shrink-0">
+                <div className="mx-auto max-w-4xl">
                   <PromptInput onSubmit={handleSubmit}>
                     <PromptInputTextarea
                       onChange={(e) => setText(e.target.value)}
