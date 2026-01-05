@@ -242,10 +242,8 @@ export default function ChatPage() {
 
   const status = isStreamingThisSession ? "streaming" : lastError ? "error" : "ready"
 
-  // Show chat UI with bottom prompt only when we have actual visible content
-  // or when loading messages for an existing session
-  // New chat (no messages) shows centered prompt like landing page
-  const hasMessages = messages.length > 0 || isStreamingThisSession || pendingBlocks.length > 0 || streamingBlocksForThisSession.length > 0 || isLoadingMessages
+  // Always use persistent layout - only message content changes
+  const hasMessages = messages.length > 0 || isStreamingThisSession || pendingBlocks.length > 0 || streamingBlocksForThisSession.length > 0
 
   const handleSubmit: FormEventHandler<HTMLFormElement> = async (event) => {
     event.preventDefault()
@@ -291,106 +289,53 @@ export default function ChatPage() {
       <SidebarInset>
         <SiteHeader title="Chat" />
         <div className="flex flex-col h-[calc(100vh-var(--header-height))] overflow-hidden">
-          {/* Messages Area or Centered Prompt */}
-          {hasMessages ? (
-            <>
-              {isLoadingMessages ? (
-                <div className="flex-1 flex items-center justify-center min-h-0">
-                  <div className="animate-pulse text-muted-foreground">
-                    Loading messages...
-                  </div>
-                </div>
-              ) : (
-                <ChatMessageList
-                  messages={messages}
-                  streamingBlocks={streamingBlocksForThisSession}
-                  pendingBlocks={pendingBlocks}
-                  isStreaming={isStreamingThisSession}
-                />
-              )}
+          {/* Persistent layout - always same structure, only content changes */}
+          <ChatMessageList
+            messages={messages}
+            streamingBlocks={streamingBlocksForThisSession}
+            pendingBlocks={pendingBlocks}
+            isStreaming={isStreamingThisSession}
+            isLoading={isLoadingMessages}
+          />
 
-              {/* Input Area at Bottom - fixed height */}
-              <div className="border-t bg-background px-4 md:px-8 lg:px-16 py-4 shrink-0">
-                <div className="mx-auto max-w-4xl">
-                  <PromptInput onSubmit={handleSubmit}>
-                    <PromptInputTextarea
-                      onChange={(e) => setText(e.target.value)}
-                      value={text}
-                      placeholder="Ask Claude to write code..."
-                    />
-                    <PromptInputToolbar>
-                      <PromptInputTools>
-                        <PromptInputButton>
-                          <Image size={16} />
-                        </PromptInputButton>
-                        <PromptInputButton>
-                          <MoreHorizontal size={16} />
-                        </PromptInputButton>
-                        <PromptInputModelSelect
-                          onValueChange={setModel}
-                          value={model}
-                        >
-                          <PromptInputModelSelectTrigger>
-                            <PromptInputModelSelectValue />
-                          </PromptInputModelSelectTrigger>
-                          <PromptInputModelSelectContent>
-                            {models.map((m) => (
-                              <PromptInputModelSelectItem key={m.id} value={m.id}>
-                                {m.name}
-                              </PromptInputModelSelectItem>
-                            ))}
-                          </PromptInputModelSelectContent>
-                        </PromptInputModelSelect>
-                      </PromptInputTools>
-                      <PromptInputSubmit disabled={!text} status={status} />
-                    </PromptInputToolbar>
-                  </PromptInput>
-                </div>
-              </div>
-            </>
-          ) : (
-            /* Centered Prompt for New Chat */
-            <div className="flex-1 flex flex-col items-center justify-center px-4">
-              <h1 className="text-3xl font-medium mb-8 text-foreground">
-                Welcome back
-              </h1>
-              <div className="w-full max-w-2xl">
-                <PromptInput onSubmit={handleSubmit}>
-                  <PromptInputTextarea
-                    onChange={(e) => setText(e.target.value)}
-                    value={text}
-                    placeholder="How can I help you today?"
-                  />
-                  <PromptInputToolbar>
-                    <PromptInputTools>
-                      <PromptInputButton>
-                        <Image size={16} />
-                      </PromptInputButton>
-                      <PromptInputButton>
-                        <MoreHorizontal size={16} />
-                      </PromptInputButton>
-                      <PromptInputModelSelect
-                        onValueChange={setModel}
-                        value={model}
-                      >
-                        <PromptInputModelSelectTrigger>
-                          <PromptInputModelSelectValue />
-                        </PromptInputModelSelectTrigger>
-                        <PromptInputModelSelectContent>
-                          {models.map((m) => (
-                            <PromptInputModelSelectItem key={m.id} value={m.id}>
-                              {m.name}
-                            </PromptInputModelSelectItem>
-                          ))}
-                        </PromptInputModelSelectContent>
-                      </PromptInputModelSelect>
-                    </PromptInputTools>
-                    <PromptInputSubmit disabled={!text} status={status} />
-                  </PromptInputToolbar>
-                </PromptInput>
-              </div>
+          {/* Input Area at Bottom - always visible, persistent */}
+          <div className="border-t bg-background px-4 md:px-8 lg:px-16 py-4 shrink-0">
+            <div className="mx-auto max-w-4xl">
+              <PromptInput onSubmit={handleSubmit}>
+                <PromptInputTextarea
+                  onChange={(e) => setText(e.target.value)}
+                  value={text}
+                  placeholder={hasMessages ? "Ask Claude to write code..." : "How can I help you today?"}
+                />
+                <PromptInputToolbar>
+                  <PromptInputTools>
+                    <PromptInputButton>
+                      <Image size={16} />
+                    </PromptInputButton>
+                    <PromptInputButton>
+                      <MoreHorizontal size={16} />
+                    </PromptInputButton>
+                    <PromptInputModelSelect
+                      onValueChange={setModel}
+                      value={model}
+                    >
+                      <PromptInputModelSelectTrigger>
+                        <PromptInputModelSelectValue />
+                      </PromptInputModelSelectTrigger>
+                      <PromptInputModelSelectContent>
+                        {models.map((m) => (
+                          <PromptInputModelSelectItem key={m.id} value={m.id}>
+                            {m.name}
+                          </PromptInputModelSelectItem>
+                        ))}
+                      </PromptInputModelSelectContent>
+                    </PromptInputModelSelect>
+                  </PromptInputTools>
+                  <PromptInputSubmit disabled={!text} status={status} />
+                </PromptInputToolbar>
+              </PromptInput>
             </div>
-          )}
+          </div>
         </div>
       </SidebarInset>
     </SidebarProvider>
