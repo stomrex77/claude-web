@@ -1,5 +1,5 @@
 import { query, type Options, type SDKMessage, type SDKResultMessage } from "@anthropic-ai/claude-agent-sdk";
-import { sessionStore, type SessionMetadata } from "./session-store.js";
+import { sessionStore, type SessionMetadata, type ChatMessage } from "./session-store.js";
 import type { AgentStreamEvent, AgentTaskResponse, AgentToolCall } from "../types/index.js";
 import { config } from "../config/index.js";
 
@@ -247,6 +247,11 @@ class ClaudeAgentService {
   // Get Claude Code stats
   getClaudeCodeStats() {
     return sessionStore.getClaudeCodeStats();
+  }
+
+  // Get messages for a session
+  getSessionMessages(sessionId: string): ChatMessage[] {
+    return sessionStore.getSessionMessages(sessionId);
   }
 }
 

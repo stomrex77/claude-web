@@ -154,6 +154,22 @@ agentRouter.get("/session/:sessionId", (req: Request, res: Response) => {
   }
 });
 
+// GET /api/agent/session/:sessionId/messages - Get session messages
+agentRouter.get("/session/:sessionId/messages", (req: Request, res: Response) => {
+  const { sessionId } = req.params;
+
+  try {
+    const messages = agentService.getSessionMessages(sessionId);
+    res.json({ messages });
+  } catch (error) {
+    console.error("Error getting session messages:", error);
+    res.status(500).json({
+      error: "Failed to get session messages",
+      message: error instanceof Error ? error.message : "Unknown error",
+    });
+  }
+});
+
 // GET /api/agent/stats - Get Claude Code stats
 agentRouter.get("/stats", (_req: Request, res: Response) => {
   try {

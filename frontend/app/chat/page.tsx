@@ -29,7 +29,7 @@ const models = [
   { id: "claude-haiku", name: "Claude Haiku" },
 ]
 
-export default function Page() {
+export default function ChatPage() {
   const [text, setText] = useState<string>("")
   const [model, setModel] = useState<string>(models[0].id)
   const [messages, setMessages] = useState<ChatMessage[]>([])
@@ -117,7 +117,7 @@ export default function Page() {
     >
       <AppSidebar variant="inset" />
       <SidebarInset>
-        <SiteHeader />
+        <SiteHeader title="Chat" />
         <div className="flex flex-1 flex-col h-[calc(100vh-var(--header-height))]">
           {/* Messages Area or Centered Prompt */}
           {hasMessages ? (

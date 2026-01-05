@@ -2,6 +2,14 @@ import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
 
+// Chat message for conversation display
+export interface ChatMessage {
+  id: string;
+  type: "user" | "assistant";
+  content: string;
+  timestamp: string;
+}
+
 // Session metadata for dashboard display
 export interface SessionMetadata {
   id: string;
@@ -393,6 +401,93 @@ class SessionStore {
       console.error(`Failed to parse session file ${filePath}:`, error);
       return null;
     }
+  }
+
+  // Find the file path for a session ID
+  private findSessionFile(sessionId: string): string | null {
+    try {
+      if (!fs.existsSync(CLAUDE_CODE_PROJECTS)) {
+        return null;
+      }
+
+      // Search through all project directories
+      const projectDirs = fs.readdirSync(CLAUDE_CODE_PROJECTS);
+
+      for (const projectDir of projectDirs) {
+        const projectPath = path.join(CLAUDE_CODE_PROJECTS, projectDir);
+        const stat = fs.statSync(projectPath);
+
+        if (!stat.isDirectory()) continue;
+
+        // Look for the session file
+        const sessionFile = path.join(projectPath, `${sessionId}.jsonl`);
+        if (fs.existsSync(sessionFile)) {
+          return sessionFile;
+        }
+      }
+
+      return null;
+    } catch (error) {
+      console.error("Error finding session file:", error);
+      return null;
+    }
+  }
+
+  // Get messages for a session
+  getSessionMessages(sessionId: string): ChatMessage[] {
+    const messages: ChatMessage[] = [];
+
+    try {
+      const sessionFile = this.findSessionFile(sessionId);
+      if (!sessionFile) {
+        console.error(`Session file not found for: ${sessionId}`);
+        return messages;
+      }
+
+      const content = fs.readFileSync(sessionFile, "utf-8");
+      const lines = content.trim().split("\n");
+
+      let messageIndex = 0;
+
+      for (const line of lines) {
+        try {
+          const msg: ClaudeCodeMessage = JSON.parse(line);
+
+          // Only include user and assistant messages
+          if (msg.type !== "user" && msg.type !== "assistant") continue;
+
+          // Extract content
+          let textContent = "";
+          if (msg.message?.content) {
+            if (typeof msg.message.content === "string") {
+              textContent = msg.message.content;
+            } else if (Array.isArray(msg.message.content)) {
+              // Combine text blocks
+              textContent = msg.message.content
+                .filter((block) => block.type === "text" && block.text)
+                .map((block) => block.text)
+                .join("\n");
+            }
+          }
+
+          // Skip empty messages or command messages
+          if (!textContent || textContent.includes("<command-name>")) continue;
+
+          messages.push({
+            id: `${sessionId}-${messageIndex++}`,
+            type: msg.type,
+            content: textContent,
+            timestamp: msg.timestamp || new Date().toISOString(),
+          });
+        } catch {
+          // Skip malformed lines
+        }
+      }
+    } catch (error) {
+      console.error(`Failed to get messages for session ${sessionId}:`, error);
+    }
+
+    return messages;
   }
 }
 
