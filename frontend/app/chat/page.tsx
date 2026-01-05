@@ -172,6 +172,22 @@ export default function ChatPage() {
   // Track if we should skip the next message reload (when user sends new message quickly)
   const loadRequestId = useRef(0)
 
+  // Poll messages every 3 seconds when not streaming
+  useEffect(() => {
+    if (!currentSessionId || isStreaming) return
+
+    const interval = setInterval(async () => {
+      try {
+        const msgs = await getSessionMessages(currentSessionId)
+        setMessages(msgs)
+      } catch (err) {
+        console.error("Failed to poll messages:", err)
+      }
+    }, 3000)
+
+    return () => clearInterval(interval)
+  }, [currentSessionId, isStreaming])
+
   // Capture streaming blocks when streaming ends and reload messages
   useEffect(() => {
     async function handleStreamEnd() {

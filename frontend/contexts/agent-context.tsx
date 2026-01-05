@@ -121,6 +121,17 @@ export function AgentProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  // Poll sessions every 3 seconds (skip during streaming)
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (!state.isStreaming) {
+        loadSessions(state.pagination?.page || 1);
+      }
+    }, 3000);
+
+    return () => clearInterval(interval);
+  }, [state.isStreaming, state.pagination?.page, loadSessions]);
+
   const sendMessage = useCallback(
     async (text: string, workingDirectory?: string) => {
       // Read the LATEST sessionId from ref to avoid stale closure issues

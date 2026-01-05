@@ -28,7 +28,7 @@ function UsageBar({ limit, loading }: { limit: UsageLimit | null; loading: boole
   const getBarColor = (percent: number) => {
     if (percent >= 80) return "bg-red-500"
     if (percent >= 60) return "bg-yellow-500"
-    return "bg-purple-400"
+    return "bg-amber-700"
   }
 
   return (
