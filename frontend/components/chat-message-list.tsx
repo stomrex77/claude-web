@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef } from "react"
+import { useEffect, useRef, useLayoutEffect } from "react"
 import { ChatMessage } from "@/components/chat-message"
 import type { ChatMessage as ChatMessageType } from "@/lib/api"
 import { IconRobot } from "@tabler/icons-react"
@@ -26,18 +26,24 @@ export function ChatMessageList({
   isStreaming,
 }: ChatMessageListProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
+  const bottomRef = useRef<HTMLDivElement>(null)
 
-  // Auto-scroll to bottom when new messages arrive or streaming content updates
+  // Scroll to bottom on mount and when messages change
+  useLayoutEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "instant" })
+  }, [messages.length])
+
+  // Smooth scroll for streaming content updates
   useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight
+    if (streamingContent) {
+      bottomRef.current?.scrollIntoView({ behavior: "smooth" })
     }
-  }, [messages, streamingContent])
+  }, [streamingContent])
 
   return (
     <div
       ref={scrollRef}
-      className="flex-1 overflow-y-auto"
+      className="flex-1 overflow-y-auto min-h-0 overscroll-contain"
     >
       {messages.length === 0 && !isStreaming ? (
         <div className="flex h-full items-center justify-center text-muted-foreground">
@@ -47,33 +53,42 @@ export function ChatMessageList({
           </div>
         </div>
       ) : (
-        <div className="py-4 space-y-1">
-          {messages.map((message) => (
-            <ChatMessage key={message.id} message={message} />
-          ))}
+        <div className="flex flex-col min-h-full">
+          {/* Spacer to push content to bottom when there's not much content */}
+          <div className="flex-1" />
 
-          {/* Streaming message */}
-          {isStreaming && streamingContent && (
-            <ChatMessage
-              message={{
-                id: "streaming",
-                type: "assistant",
-                content: streamingContent,
-                timestamp: new Date().toISOString(),
-                isStreaming: true,
-              }}
-            />
-          )}
+          {/* Messages container */}
+          <div className="py-4 space-y-1">
+            {messages.map((message) => (
+              <ChatMessage key={message.id} message={message} />
+            ))}
 
-          {/* Loading indicator - timeline style */}
-          {isStreaming && !streamingContent && (
-            <div className="px-4 py-2">
-              <div className="flex items-start gap-3">
-                <StreamingDot />
-                <span className="text-muted-foreground">Thinking...</span>
+            {/* Streaming message */}
+            {isStreaming && streamingContent && (
+              <ChatMessage
+                message={{
+                  id: "streaming",
+                  type: "assistant",
+                  content: streamingContent,
+                  timestamp: new Date().toISOString(),
+                  isStreaming: true,
+                }}
+              />
+            )}
+
+            {/* Loading indicator - timeline style */}
+            {isStreaming && !streamingContent && (
+              <div className="px-4 py-2">
+                <div className="flex items-start gap-3">
+                  <StreamingDot />
+                  <span className="text-muted-foreground">Thinking...</span>
+                </div>
               </div>
-            </div>
-          )}
+            )}
+          </div>
+
+          {/* Scroll anchor */}
+          <div ref={bottomRef} />
         </div>
       )}
     </div>

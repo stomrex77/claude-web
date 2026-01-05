@@ -118,12 +118,12 @@ export default function ChatPage() {
       <AppSidebar variant="inset" />
       <SidebarInset>
         <SiteHeader title="Chat" />
-        <div className="flex flex-1 flex-col h-[calc(100vh-var(--header-height))]">
+        <div className="flex flex-col h-[calc(100vh-var(--header-height))] overflow-hidden">
           {/* Messages Area or Centered Prompt */}
           {hasMessages ? (
             <>
               {isLoadingMessages ? (
-                <div className="flex-1 flex items-center justify-center">
+                <div className="flex-1 flex items-center justify-center min-h-0">
                   <div className="animate-pulse text-muted-foreground">
                     Loading messages...
                   </div>
@@ -136,8 +136,8 @@ export default function ChatPage() {
                 />
               )}
 
-              {/* Input Area at Bottom */}
-              <div className="border-t bg-background p-4">
+              {/* Input Area at Bottom - fixed height */}
+              <div className="border-t bg-background p-4 shrink-0">
                 <div className="mx-auto max-w-3xl">
                   <PromptInput onSubmit={handleSubmit}>
                     <PromptInputTextarea

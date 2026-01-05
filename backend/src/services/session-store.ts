@@ -2,12 +2,40 @@ import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
 
+// Tool call for displaying agent actions
+export interface ToolCall {
+  id: string;
+  type: string;
+  name: string;
+  input?: Record<string, unknown>;
+  result?: string;
+  // Rich data for different tool types
+  details?: {
+    // For Read/Write operations
+    filePath?: string;
+    numLines?: number;
+    // For Edit operations
+    oldString?: string;
+    newString?: string;
+    // For Bash operations
+    command?: string;
+    stdout?: string;
+    stderr?: string;
+    exitCode?: number;
+    // For Glob/Grep operations
+    pattern?: string;
+    matchCount?: number;
+    matches?: string[];
+  };
+}
+
 // Chat message for conversation display
 export interface ChatMessage {
   id: string;
   type: "user" | "assistant";
   content: string;
   timestamp: string;
+  toolCalls?: ToolCall[];
 }
 
 // Session metadata for dashboard display
@@ -56,6 +84,33 @@ export interface ClaudeCodeStatsCache {
   firstSessionDate?: string;
 }
 
+// Content block types in Claude Code messages
+interface ContentBlock {
+  type: "text" | "tool_use" | "tool_result" | "thinking";
+  // For text blocks
+  text?: string;
+  thinking?: string;
+  // For tool_use blocks
+  id?: string;
+  name?: string;
+  input?: Record<string, unknown>;
+  // For tool_result blocks
+  tool_use_id?: string;
+  content?: string | Array<{ type: string; text?: string }>;
+  is_error?: boolean;
+}
+
+// Tool use result metadata from Claude Code
+interface ToolUseResultMeta {
+  type?: string;
+  file?: { filePath: string; content: string; numLines: number };
+  filenames?: string[];
+  durationMs?: number;
+  stdout?: string;
+  stderr?: string;
+  exitCode?: number;
+}
+
 // Claude Code session message structure
 interface ClaudeCodeMessage {
   type: "user" | "assistant" | "summary" | "file-history-snapshot";
@@ -65,7 +120,7 @@ interface ClaudeCodeMessage {
   gitBranch?: string;
   message?: {
     role: string;
-    content: string | Array<{ type: string; text?: string; thinking?: string }>;
+    content: string | ContentBlock[];
     usage?: {
       input_tokens: number;
       output_tokens: number;
@@ -73,6 +128,7 @@ interface ClaudeCodeMessage {
       cache_read_input_tokens?: number;
     };
   };
+  toolUseResult?: ToolUseResultMeta;
   summary?: string;
   slug?: string;
 }
@@ -433,6 +489,109 @@ class SessionStore {
     }
   }
 
+  // Helper to extract display name for a tool call
+  private getToolDisplayName(toolName: string, input?: Record<string, unknown>): string {
+    if (!input) return toolName;
+
+    switch (toolName.toLowerCase()) {
+      case "read":
+        return (input.file_path as string) || "file";
+      case "write":
+      case "edit":
+        return (input.file_path as string) || "file";
+      case "bash":
+        const cmd = input.command as string;
+        return cmd ? (cmd.length > 50 ? cmd.slice(0, 47) + "..." : cmd) : "command";
+      case "glob":
+        return (input.pattern as string) || "pattern";
+      case "grep":
+        return (input.pattern as string) || "search";
+      case "task":
+        return (input.description as string) || "task";
+      default:
+        return toolName;
+    }
+  }
+
+  // Helper to format tool result for display
+  private formatToolResult(toolUseResult?: ToolUseResultMeta): string | undefined {
+    if (!toolUseResult) return undefined;
+
+    if (toolUseResult.file) {
+      return `Read ${toolUseResult.file.numLines} lines`;
+    }
+    if (toolUseResult.filenames) {
+      return `Found ${toolUseResult.filenames.length} files`;
+    }
+    if (toolUseResult.exitCode !== undefined) {
+      return toolUseResult.exitCode === 0 ? "Success" : `Exit code: ${toolUseResult.exitCode}`;
+    }
+    if (toolUseResult.durationMs) {
+      return `Completed in ${toolUseResult.durationMs}ms`;
+    }
+    return "Completed";
+  }
+
+  // Helper to build rich details for a tool call
+  private buildToolDetails(
+    toolName: string,
+    input?: Record<string, unknown>,
+    toolUseResult?: ToolUseResultMeta
+  ): ToolCall["details"] {
+    const type = toolName.toLowerCase();
+    const details: ToolCall["details"] = {};
+
+    switch (type) {
+      case "read":
+        details.filePath = input?.file_path as string;
+        if (toolUseResult?.file) {
+          details.numLines = toolUseResult.file.numLines;
+        }
+        break;
+
+      case "write":
+        details.filePath = input?.file_path as string;
+        const content = input?.content as string;
+        if (content) {
+          details.numLines = content.split("\n").length;
+        }
+        break;
+
+      case "edit":
+        details.filePath = input?.file_path as string;
+        details.oldString = input?.old_string as string;
+        details.newString = input?.new_string as string;
+        break;
+
+      case "bash":
+        details.command = input?.command as string;
+        if (toolUseResult) {
+          details.stdout = toolUseResult.stdout;
+          details.stderr = toolUseResult.stderr;
+          details.exitCode = toolUseResult.exitCode;
+        }
+        break;
+
+      case "glob":
+        details.pattern = input?.pattern as string;
+        if (toolUseResult?.filenames) {
+          details.matchCount = toolUseResult.filenames.length;
+          details.matches = toolUseResult.filenames;
+        }
+        break;
+
+      case "grep":
+        details.pattern = input?.pattern as string;
+        if (toolUseResult?.filenames) {
+          details.matchCount = toolUseResult.filenames.length;
+          details.matches = toolUseResult.filenames;
+        }
+        break;
+    }
+
+    return Object.keys(details).length > 0 ? details : undefined;
+  }
+
   // Get messages for a session
   getSessionMessages(sessionId: string): ChatMessage[] {
     const messages: ChatMessage[] = [];
@@ -448,37 +607,112 @@ class SessionStore {
       const lines = content.trim().split("\n");
 
       let messageIndex = 0;
+      // Track pending tool calls to match with results (store input for details building)
+      const pendingToolCalls: Map<string, { toolCall: ToolCall; input?: Record<string, unknown> }> = new Map();
 
       for (const line of lines) {
         try {
           const msg: ClaudeCodeMessage = JSON.parse(line);
 
-          // Only include user and assistant messages
+          // Skip non-message types
           if (msg.type !== "user" && msg.type !== "assistant") continue;
 
-          // Extract content
-          let textContent = "";
-          if (msg.message?.content) {
-            if (typeof msg.message.content === "string") {
-              textContent = msg.message.content;
-            } else if (Array.isArray(msg.message.content)) {
-              // Combine text blocks
-              textContent = msg.message.content
-                .filter((block) => block.type === "text" && block.text)
-                .map((block) => block.text)
-                .join("\n");
+          if (msg.type === "assistant" && msg.message?.content) {
+            const contentBlocks = msg.message.content;
+
+            if (Array.isArray(contentBlocks)) {
+              let textContent = "";
+              const toolCalls: ToolCall[] = [];
+
+              for (const block of contentBlocks) {
+                if (block.type === "text" && block.text) {
+                  textContent += block.text;
+                } else if (block.type === "tool_use" && block.id && block.name) {
+                  const toolCall: ToolCall = {
+                    id: block.id,
+                    type: block.name.toLowerCase(),
+                    name: this.getToolDisplayName(block.name, block.input),
+                    input: block.input,
+                  };
+                  toolCalls.push(toolCall);
+                  // Store for matching with result later (keep input for details)
+                  pendingToolCalls.set(block.id, { toolCall, input: block.input });
+                }
+              }
+
+              // Only add message if there's text or tool calls
+              if (textContent || toolCalls.length > 0) {
+                messages.push({
+                  id: `${sessionId}-${messageIndex++}`,
+                  type: "assistant",
+                  content: textContent,
+                  timestamp: msg.timestamp || new Date().toISOString(),
+                  toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+                });
+              }
+            } else if (typeof contentBlocks === "string") {
+              // Simple string content
+              if (contentBlocks && !contentBlocks.includes("<command-name>")) {
+                messages.push({
+                  id: `${sessionId}-${messageIndex++}`,
+                  type: "assistant",
+                  content: contentBlocks,
+                  timestamp: msg.timestamp || new Date().toISOString(),
+                });
+              }
+            }
+          } else if (msg.type === "user" && msg.message?.content) {
+            const contentBlocks = msg.message.content;
+
+            // Check if this is a tool result message
+            if (Array.isArray(contentBlocks)) {
+              let isToolResult = false;
+
+              for (const block of contentBlocks) {
+                if (block.type === "tool_result" && block.tool_use_id) {
+                  isToolResult = true;
+                  // Match with pending tool call and add result + details
+                  const pending = pendingToolCalls.get(block.tool_use_id);
+                  if (pending) {
+                    pending.toolCall.result = this.formatToolResult(msg.toolUseResult);
+                    // Build rich details from input + result
+                    pending.toolCall.details = this.buildToolDetails(
+                      pending.toolCall.type,
+                      pending.input,
+                      msg.toolUseResult
+                    );
+                  }
+                }
+              }
+
+              // If it's not a tool result, it's a user message
+              if (!isToolResult) {
+                const textContent = contentBlocks
+                  .filter((block): block is ContentBlock => block.type === "text" && !!block.text)
+                  .map((block) => block.text)
+                  .join("\n");
+
+                if (textContent && !textContent.includes("<command-name>")) {
+                  messages.push({
+                    id: `${sessionId}-${messageIndex++}`,
+                    type: "user",
+                    content: textContent,
+                    timestamp: msg.timestamp || new Date().toISOString(),
+                  });
+                }
+              }
+            } else if (typeof contentBlocks === "string") {
+              // Simple string user message
+              if (contentBlocks && !contentBlocks.includes("<command-name>")) {
+                messages.push({
+                  id: `${sessionId}-${messageIndex++}`,
+                  type: "user",
+                  content: contentBlocks,
+                  timestamp: msg.timestamp || new Date().toISOString(),
+                });
+              }
             }
           }
-
-          // Skip empty messages or command messages
-          if (!textContent || textContent.includes("<command-name>")) continue;
-
-          messages.push({
-            id: `${sessionId}-${messageIndex++}`,
-            type: msg.type,
-            content: textContent,
-            timestamp: msg.timestamp || new Date().toISOString(),
-          });
         } catch {
           // Skip malformed lines
         }
@@ -488,6 +722,37 @@ class SessionStore {
     }
 
     return messages;
+  }
+
+  // Get session details for resumption (internal sessionId and cwd)
+  getSessionDetails(fileId: string): { sessionId: string; cwd: string } | null {
+    try {
+      const sessionFile = this.findSessionFile(fileId);
+      if (!sessionFile) {
+        console.error(`Session file not found for: ${fileId}`);
+        return null;
+      }
+
+      const content = fs.readFileSync(sessionFile, "utf-8");
+      const lines = content.trim().split("\n");
+
+      // Find the first message with sessionId and cwd
+      for (const line of lines) {
+        try {
+          const msg: ClaudeCodeMessage = JSON.parse(line);
+          if (msg.sessionId && msg.cwd) {
+            return { sessionId: msg.sessionId, cwd: msg.cwd };
+          }
+        } catch {
+          // Skip malformed lines
+        }
+      }
+
+      return null;
+    } catch (error) {
+      console.error(`Failed to get session details for ${fileId}:`, error);
+      return null;
+    }
   }
 }
 

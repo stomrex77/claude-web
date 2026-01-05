@@ -142,53 +142,64 @@ export function AgentProvider({ children }: { children: ReactNode }) {
   );
 
   const handleStreamEvent = useCallback((event: AgentStreamEvent) => {
+    // Safety check for undefined data
+    const data = event.data as Record<string, unknown> | undefined;
+
     switch (event.type) {
       case "connected":
-        setState((prev) => ({
-          ...prev,
-          currentSessionId: (event.data as { sessionId: string }).sessionId,
-        }));
+        if (data?.sessionId) {
+          setState((prev) => ({
+            ...prev,
+            currentSessionId: data.sessionId as string,
+          }));
+        }
         break;
 
       case "token":
-        setState((prev) => ({
-          ...prev,
-          streamingContent:
-            prev.streamingContent + ((event.data as { text?: string }).text || ""),
-        }));
+        if (data?.text) {
+          setState((prev) => ({
+            ...prev,
+            streamingContent: prev.streamingContent + (data.text as string),
+          }));
+        }
         break;
 
       case "complete":
-        const completeData = event.data as {
-          sessionId: string;
-          usage?: { inputTokens: number; outputTokens: number; costUsd?: number };
-        };
-        setState((prev) => ({
-          ...prev,
-          isStreaming: false,
-          currentSessionId: completeData.sessionId,
-          usage: completeData.usage
-            ? {
-                currentSession: {
-                  input: completeData.usage.inputTokens,
-                  output: completeData.usage.outputTokens,
-                  costUsd: completeData.usage.costUsd || 0,
-                },
-                total: {
-                  input: prev.usage.total.input + completeData.usage.inputTokens,
-                  output: prev.usage.total.output + completeData.usage.outputTokens,
-                  costUsd: prev.usage.total.costUsd + (completeData.usage.costUsd || 0),
-                },
-              }
-            : prev.usage,
-        }));
+        setState((prev) => {
+          const sessionId = data?.sessionId as string | undefined;
+          const usage = data?.usage as {
+            inputTokens: number;
+            outputTokens: number;
+            costUsd?: number;
+          } | undefined;
+
+          return {
+            ...prev,
+            isStreaming: false,
+            currentSessionId: sessionId || prev.currentSessionId,
+            usage: usage
+              ? {
+                  currentSession: {
+                    input: usage.inputTokens,
+                    output: usage.outputTokens,
+                    costUsd: usage.costUsd || 0,
+                  },
+                  total: {
+                    input: prev.usage.total.input + usage.inputTokens,
+                    output: prev.usage.total.output + usage.outputTokens,
+                    costUsd: prev.usage.total.costUsd + (usage.costUsd || 0),
+                  },
+                }
+              : prev.usage,
+          };
+        });
         break;
 
       case "error":
         setState((prev) => ({
           ...prev,
           isStreaming: false,
-          lastError: (event.data as { message?: string }).message || "Unknown error",
+          lastError: (data?.message as string) || "Unknown error",
         }));
         break;
 

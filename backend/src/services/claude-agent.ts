@@ -1,7 +1,17 @@
 import { query, type Options, type SDKMessage, type SDKResultMessage } from "@anthropic-ai/claude-agent-sdk";
+import * as os from "os";
+import * as path from "path";
 import { sessionStore, type SessionMetadata, type ChatMessage } from "./session-store.js";
 import type { AgentStreamEvent, AgentTaskResponse, AgentToolCall } from "../types/index.js";
 import { config } from "../config/index.js";
+
+// Expand ~ to home directory
+function expandPath(inputPath: string): string {
+  if (inputPath.startsWith("~")) {
+    return path.join(os.homedir(), inputPath.slice(1));
+  }
+  return inputPath;
+}
 
 class ClaudeAgentService {
   async executeTask(
@@ -14,11 +24,25 @@ class ClaudeAgentService {
     let newSessionId = sessionId || "";
     let stopReason = "end_turn";
 
+    // Resolve session details for proper resumption
+    let actualSessionId = sessionId;
+    let actualCwd = expandPath(workingDirectory);
+
+    if (sessionId) {
+      const details = sessionStore.getSessionDetails(sessionId);
+      if (details) {
+        // Use the internal sessionId for Claude Agent SDK resume
+        actualSessionId = details.sessionId;
+        // Use the original working directory from the session
+        actualCwd = expandPath(details.cwd);
+      }
+    }
+
     const options: Options = {
-      cwd: workingDirectory,
+      cwd: actualCwd,
       allowedTools: ["Read", "Write", "Edit", "Bash", "Glob", "Grep"],
       permissionMode: "acceptEdits",
-      ...(sessionId && { resume: sessionId }),
+      ...(actualSessionId && { resume: actualSessionId }),
     };
 
     try {
@@ -79,12 +103,26 @@ class ClaudeAgentService {
     sessionId?: string,
     workingDirectory: string = config.defaultWorkingDirectory
   ): AsyncGenerator<AgentStreamEvent> {
+    // Resolve session details for proper resumption
+    let actualSessionId = sessionId;
+    let actualCwd = expandPath(workingDirectory);
+
+    if (sessionId) {
+      const details = sessionStore.getSessionDetails(sessionId);
+      if (details) {
+        // Use the internal sessionId for Claude Agent SDK resume
+        actualSessionId = details.sessionId;
+        // Use the original working directory from the session
+        actualCwd = expandPath(details.cwd);
+      }
+    }
+
     const options: Options = {
-      cwd: workingDirectory,
+      cwd: actualCwd,
       allowedTools: ["Read", "Write", "Edit", "Bash", "Glob", "Grep"],
       permissionMode: "acceptEdits",
       includePartialMessages: true,
-      ...(sessionId && { resume: sessionId }),
+      ...(actualSessionId && { resume: actualSessionId }),
     };
 
     let currentSessionId = sessionId || "";
