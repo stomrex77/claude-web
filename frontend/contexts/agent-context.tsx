@@ -76,9 +76,6 @@ export function AgentProvider({ children }: { children: ReactNode }) {
   // Keep the ref in sync with state
   useEffect(() => {
     currentSessionIdRef.current = state.currentSessionId;
-    // #region agent log
-    console.log('[DEBUG] currentSessionIdRef updated:', state.currentSessionId);
-    // #endregion
   }, [state.currentSessionId]);
 
   // Load sessions on mount
@@ -128,10 +125,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
     async (text: string, workingDirectory?: string) => {
       // Read the LATEST sessionId from ref to avoid stale closure issues
       const sessionIdToUse = currentSessionIdRef.current;
-      // #region agent log
-      console.log('[DEBUG] sendMessage START - sessionIdToUse from ref:', sessionIdToUse, 'text:', text.slice(0, 30));
-      fetch('http://127.0.0.1:7242/ingest/05a2cc4b-7e4a-44fb-a5e5-d1c65c36bda6',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'agent-context.tsx:SEND_MESSAGE_ENTRY',message:'sendMessage called',data:{sessionIdFromRef:sessionIdToUse,textPreview:text.slice(0,30)},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A,B'})}).catch(()=>{});
-      // #endregion
+      
       setState((prev) => ({
         ...prev,
         isStreaming: true,
@@ -141,25 +135,15 @@ export function AgentProvider({ children }: { children: ReactNode }) {
       }));
 
       try {
-        // #region agent log
-        console.log('[DEBUG] Calling streamAgentTask with sessionId:', sessionIdToUse || 'undefined');
-        fetch('http://127.0.0.1:7242/ingest/05a2cc4b-7e4a-44fb-a5e5-d1c65c36bda6',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'agent-context.tsx:STREAM_TASK_CALL',message:'Calling streamAgentTask',data:{sessionIdBeingSent:sessionIdToUse || 'undefined'},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A,E'})}).catch(()=>{});
-        // #endregion
         const stream = streamAgentTask(
           text,
           sessionIdToUse || undefined,
           workingDirectory
         );
 
-        // #region agent log
-        console.log('[DEBUG] Starting to iterate over stream events...');
-        // #endregion
         for await (const event of stream) {
           handleStreamEvent(event);
         }
-        // #region agent log
-        console.log('[DEBUG] Stream iteration complete. Ref is now:', currentSessionIdRef.current);
-        // #endregion
       } catch (error) {
         console.error("Error sending message:", error);
         setState((prev) => ({
@@ -169,9 +153,6 @@ export function AgentProvider({ children }: { children: ReactNode }) {
         }));
       }
 
-      // #region agent log
-      console.log('[DEBUG] sendMessage END - ref is now:', currentSessionIdRef.current);
-      // #endregion
       // Refresh sessions and usage after completion
       await loadSessions();
       await refreshUsage();
@@ -183,26 +164,12 @@ export function AgentProvider({ children }: { children: ReactNode }) {
     // Safety check for undefined data
     const data = event.data as Record<string, unknown> | undefined;
 
-    // #region agent log
-    console.log('[DEBUG] handleStreamEvent received:', event.type, 'data:', JSON.stringify(data));
-    // #endregion
-
     switch (event.type) {
       case "connected":
-        // #region agent log
-        console.log('[DEBUG] Connected event received - data?.sessionId =', data?.sessionId);
-        // #endregion
         if (data?.sessionId) {
           const newSessionId = data.sessionId as string;
-          // #region agent log
-          console.log('[DEBUG] Connected event - updating sessionId to:', newSessionId, 'ref before:', currentSessionIdRef.current);
-          fetch('http://127.0.0.1:7242/ingest/05a2cc4b-7e4a-44fb-a5e5-d1c65c36bda6',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'agent-context.tsx:CONNECTED_EVENT',message:'Stream connected with sessionId',data:{sessionId:newSessionId},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A'})}).catch(()=>{});
-          // #endregion
           // Update ref IMMEDIATELY so subsequent messages use correct sessionId
           currentSessionIdRef.current = newSessionId;
-          // #region agent log
-          console.log('[DEBUG] Connected event - ref after update:', currentSessionIdRef.current);
-          // #endregion
           setState((prev) => ({
             ...prev,
             currentSessionId: newSessionId,
@@ -232,9 +199,6 @@ export function AgentProvider({ children }: { children: ReactNode }) {
         break;
 
       case "complete":
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/05a2cc4b-7e4a-44fb-a5e5-d1c65c36bda6',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'agent-context.tsx:COMPLETE_EVENT',message:'Stream complete event received',data:{eventSessionId:data?.sessionId},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A,B'})}).catch(()=>{});
-        // #endregion
         setState((prev) => {
           const sessionId = data?.sessionId as string | undefined;
           const usage = data?.usage as {
@@ -322,9 +286,6 @@ export function AgentProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const resumeSession = useCallback((sessionId: string) => {
-    // #region agent log
-    console.log('[DEBUG] resumeSession called with:', sessionId);
-    // #endregion
     // Update ref immediately for consistency
     currentSessionIdRef.current = sessionId;
     setState((prev) => ({
@@ -335,10 +296,6 @@ export function AgentProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const clearSession = useCallback(() => {
-    // #region agent log
-    console.log('[DEBUG] clearSession called');
-    fetch('http://127.0.0.1:7242/ingest/05a2cc4b-7e4a-44fb-a5e5-d1c65c36bda6',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'agent-context.tsx:CLEAR_SESSION',message:'clearSession called',data:{},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'B'})}).catch(()=>{});
-    // #endregion
     // Update ref immediately to null for new chat
     currentSessionIdRef.current = null;
     setState((prev) => ({

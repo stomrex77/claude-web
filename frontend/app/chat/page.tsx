@@ -67,16 +67,6 @@ export default function ChatPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const urlSessionId = searchParams.get("session")
-  
-  // #region agent log
-  useEffect(() => {
-    const mountTime = Date.now();
-    fetch('http://127.0.0.1:7242/ingest/05a2cc4b-7e4a-44fb-a5e5-d1c65c36bda6',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'chat/page.tsx:MOUNT',message:'ChatPage component MOUNTED',data:{urlSessionId,mountTime},timestamp:mountTime,sessionId:'debug-session',hypothesisId:'F'})}).catch(()=>{});
-    return () => {
-      fetch('http://127.0.0.1:7242/ingest/05a2cc4b-7e4a-44fb-a5e5-d1c65c36bda6',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'chat/page.tsx:UNMOUNT',message:'ChatPage component UNMOUNTED',data:{mountTime},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'F'})}).catch(()=>{});
-    };
-  }, []);
-  // #endregion
 
   const [text, setText] = useState<string>("")
   const [model, setModel] = useState<string>(models[0].id)
@@ -109,14 +99,8 @@ export default function ChatPage() {
 
   // Update URL when a NEW session is created (from streaming)
   useEffect(() => {
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/05a2cc4b-7e4a-44fb-a5e5-d1c65c36bda6',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'chat/page.tsx:URL_UPDATE_EFFECT',message:'URL update effect triggered',data:{currentSessionId,urlSessionId,isCreatingNewSession:isCreatingNewSession.current},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A,C'})}).catch(()=>{});
-    // #endregion
     // Only redirect if we're actively creating a new session
     if (currentSessionId && !urlSessionId && isCreatingNewSession.current) {
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/05a2cc4b-7e4a-44fb-a5e5-d1c65c36bda6',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'chat/page.tsx:URL_REPLACE',message:'Calling router.replace to update URL',data:{newUrl:`/chat?session=${currentSessionId}`},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A'})}).catch(()=>{});
-      // #endregion
       router.replace(`/chat?session=${currentSessionId}`, { scroll: false })
       isCreatingNewSession.current = false
     }
@@ -128,9 +112,6 @@ export default function ChatPage() {
   const prevUrlSessionId = useRef<string | null | undefined>(undefined)
   useEffect(() => {
     async function loadMessages() {
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/05a2cc4b-7e4a-44fb-a5e5-d1c65c36bda6',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'chat/page.tsx:LOAD_MESSAGES',message:'loadMessages called',data:{urlSessionId,prevUrlSessionId:prevUrlSessionId.current,isStreaming,globalLoadComplete:getGlobalInitialLoadComplete()},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'D,E,H'})}).catch(()=>{});
-      // #endregion
       // Only load if URL session actually changed (not just on mount during streaming)
       // Note: undefined !== null, so this will run on first mount even with null urlSessionId
       if (urlSessionId === prevUrlSessionId.current) {
@@ -143,9 +124,6 @@ export default function ChatPage() {
         if (!isStreaming) {
           // Check if another instance has already set a session (two-instance mount scenario)
           const existingGlobalSession = getGlobalLastKnownSessionId()
-          // #region agent log
-          fetch('http://127.0.0.1:7242/ingest/05a2cc4b-7e4a-44fb-a5e5-d1c65c36bda6',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'chat/page.tsx:CLEAR_MESSAGES',message:'Clearing messages - no URL session and not streaming',data:{urlSessionId,isStreaming,wasOnSession:!!prevUrlSessionId.current,existingGlobalSession},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'E'})}).catch(()=>{});
-          // #endregion
           setMessages([])
           setPendingBlocks([])
           // Only reset global state if we were previously on a session AND no other instance
@@ -250,18 +228,12 @@ export default function ChatPage() {
   // CRITICAL: Also show chat UI if initial load hasn't completed - this prevents the
   // "new chat" flash during hydration when urlSessionId may briefly be null
   const hasMessages = messages.length > 0 || isStreaming || pendingBlocks.length > 0 || streamingBlocks.length > 0 || !!urlSessionId || !!currentSessionId || !!globalSession || !globalLoadComplete
-  // #region agent log
-  fetch('http://127.0.0.1:7242/ingest/05a2cc4b-7e4a-44fb-a5e5-d1c65c36bda6',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'chat/page.tsx:HAS_MESSAGES_CALC',message:'hasMessages calculated',data:{hasMessages,messagesLen:messages.length,isStreaming,pendingBlocksLen:pendingBlocks.length,streamingBlocksLen:streamingBlocks.length,urlSessionId,currentSessionId,globalSession,globalLoadComplete},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'B,H'})}).catch(()=>{});
-  // #endregion
 
   const handleSubmit: FormEventHandler<HTMLFormElement> = async (event) => {
     event.preventDefault()
     if (!text || isStreaming) {
       return
     }
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/05a2cc4b-7e4a-44fb-a5e5-d1c65c36bda6',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'chat/page.tsx:HANDLE_SUBMIT',message:'Form submitted',data:{urlSessionId,text:text.slice(0,50)},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A'})}).catch(()=>{});
-    // #endregion
 
     // Cancel any pending message reloads from previous stream
     loadRequestId.current++
